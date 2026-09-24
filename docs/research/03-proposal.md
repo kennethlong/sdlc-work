@@ -63,12 +63,17 @@ sdlc-work/
 
 ## Decisions (2026-09-24)
 
-- **Tracker:** Jira + Confluence. Develop against free Atlassian Cloud sites via the Rovo MCP server.
+- **Tracker:** Jira + Confluence **Data Center** (self-hosted at work). The official Rovo MCP server is
+  Cloud-only, so the Jira/Confluence bridge must target the DC REST API with Personal Access Tokens, either
+  via a community MCP server (e.g. `sooperset/mcp-atlassian`, to be verified) or our own thin TS adapter.
+  Local testing uses Jira Software and Confluence DC in Docker with free trial licenses. Keep the adapter
+  interface tracker-agnostic so Cloud can be added later.
 - **Portability:** portable to other agents from day one (Agent Skills + AGENTS.md; no Claude-only features in core skills).
 - **Starter pack:** rewrite, using it as inspiration only. No copied content, so its missing license doesn't matter.
 - **GSD:** recommended to build on **GSD Core** (`@opengsd/gsd-core`, the community continuation) as the
   plan/execute engine behind an adapter, and to spend our effort on the Jira/Confluence bridge and the phases GSD lacks.
-  The locally installed `get-shit-done-cc@1.42.3` is from the archived upstream and should be migrated. Pending user confirmation.
+  Confirmed. Migrated this machine from `get-shit-done-cc@1.42.3` to `@opengsd/gsd-core@1.14.0` on 2026-09-24;
+  the existing `.planning/` projects read cleanly under the new version.
 
 ## Open questions
 
