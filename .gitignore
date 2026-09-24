@@ -29,3 +29,4 @@ logs/
 *.log
 .claude/settings.local.json
 worktrees/
+setup-debug/

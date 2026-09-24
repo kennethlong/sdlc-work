@@ -3,8 +3,10 @@
 .SYNOPSIS
   Manage the local Jira + Confluence Data Center stack.
 .EXAMPLE
-  ./dc.ps1 init                     # create .env with random DB passwords
-  ./dc.ps1 up                       # start and wait until both apps answer /status
+  ./dc.ps1 up                       # everything: .env, containers, setup wizards, SDLC project/space, PATs
+  ./dc.ps1 up -NoSetup              # containers only
+  ./dc.ps1 setup                    # (re)run the unattended setup against running containers; idempotent
+  ./dc.ps1 init                     # create .env with random DB passwords (up does this if needed)
   ./dc.ps1 status
   ./dc.ps1 logs jira
   ./dc.ps1 down                     # stop, keep data
@@ -15,7 +17,7 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('init', 'up', 'down', 'status', 'logs', 'reset', 'license')]
+    [ValidateSet('init', 'up', 'setup', 'down', 'status', 'logs', 'reset', 'license')]
     [string]$Command = 'status',
 
     # logs: service name. license: jira | confluence | all.
@@ -28,7 +30,17 @@ param(
     [switch]$Copy,
 
     # license: install the key into the running, already-set-up instance(s).
-    [switch]$Apply
+    [switch]$Apply,
+
+    # up: start containers without running the unattended setup.
+    [switch]$NoSetup,
+
+    # setup: show the browser while the wizards run.
+    [switch]$Headed,
+
+    # Alternate env file / compose project, e.g. for a second throwaway stack on other ports.
+    [string]$EnvFile = '.env',
+    [string]$Project = 'sdlc-atlassian'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -41,22 +53,29 @@ $LicenseProducts = [ordered]@{
     confluence = @{ Heading = 'Confluence Data Center'; EnvVar = 'CONFLUENCE_LICENSE_KEY' }
 }
 
+# Native tools write progress to stderr; under PS 5.1 that becomes a terminating error when output is
+# redirected and ErrorActionPreference is Stop. Callers check $LASTEXITCODE instead.
+function Invoke-Compose {
+    $ErrorActionPreference = 'Continue'
+    docker compose -p $Project --env-file $EnvFile @args
+}
+
 function Get-EnvValue([string]$Name, [string]$Default) {
-    if (Test-Path .env) {
-        $line = Get-Content .env | Where-Object { $_ -match "^\s*$Name\s*=" } | Select-Object -First 1
+    if (Test-Path $EnvFile) {
+        $line = Get-Content $EnvFile | Where-Object { $_ -match "^\s*$Name\s*=" } | Select-Object -First 1
         if ($line) { $v = ($line -split '=', 2)[1].Trim(); if ($v) { return $v } }
     }
     return $Default
 }
 
 function Set-EnvValue([string]$Name, [string]$Value) {
-    $lines = @(Get-Content .env)
+    $lines = @(Get-Content $EnvFile)
     $found = $false
     $lines = $lines | ForEach-Object {
         if ($_ -match "^\s*$Name\s*=") { $found = $true; "$Name=$Value" } else { $_ }
     }
     if (-not $found) { $lines += "$Name=$Value" }
-    $lines | Set-Content .env -Encoding ascii
+    $lines | Set-Content $EnvFile -Encoding ascii
 }
 
 function New-Secret {
@@ -122,9 +141,10 @@ function Install-JiraLicense([string]$Key) {
     # Same call the admin "Versions & licenses" page makes. XSRF check must be bypassed for REST clients.
     $uri = "$($apps.jira)/rest/plugins/applications/1.0/installed/jira-software/license"
     $headers = (Get-JiraAuthHeaders) + @{ 'X-Atlassian-Token' = 'no-check' }
-    $body = @{ rawLicense = $Key } | ConvertTo-Json
-    $r = Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -ContentType 'application/json' -Body $body
-    Write-Host "  jira: license installed (expires $($r.expiryDateString); valid=$($r.valid))"
+    # UPM wants its vendor media type and a `licenseKey` field (plain JSON -> 415, `rawLicense` -> 500).
+    $body = @{ licenseKey = $Key } | ConvertTo-Json
+    $r = Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -ContentType 'application/vnd.atl.plugins+json' -Body $body
+    Write-Host "  jira: license installed (expires $($r.license.expiryDateString); valid=$($r.license.valid))"
 }
 
 function Install-ConfluenceLicense([string]$Key) {
@@ -142,12 +162,33 @@ else:
     s = s.replace('</properties>', '    ' + line + '\n  </properties>', 1)
 open(p, 'w').write(s)
 '@
-    $script | docker compose exec -T -e "NEWKEY=$Key" confluence python3 -
+    $ErrorActionPreference = 'Continue'
+    $script | docker compose -p $Project --env-file $EnvFile exec -T -e "NEWKEY=$Key" confluence python3 -
     if ($LASTEXITCODE) { throw 'Failed to update confluence.cfg.xml' }
     Write-Host '  confluence: license written, restarting...'
-    docker compose restart confluence | Out-Null
+    Invoke-Compose restart confluence | Out-Null
     Wait-Apps @('confluence')
     Write-Host '  confluence: license installed'
+}
+
+function Invoke-Setup {
+    $ErrorActionPreference = 'Continue'
+    Push-Location (Join-Path $PSScriptRoot 'setup')
+    try {
+        if (-not (Test-Path node_modules)) {
+            Write-Host 'Installing setup dependencies (first run only)...'
+            npm ci --no-audit --no-fund | Out-Null
+            if ($LASTEXITCODE) { throw 'npm ci failed' }
+            npx playwright install chromium | Out-Null
+        }
+        $envPath = if ([IO.Path]::IsPathRooted($EnvFile)) { $EnvFile } else { Join-Path $PSScriptRoot $EnvFile }
+        $nodeArgs = @('src/setup.ts', '--env', $envPath)
+        if ($Headed) { $nodeArgs += '--headed' }
+        node @nodeArgs
+        if ($LASTEXITCODE) { throw 'Unattended setup failed (see output above; screenshots in setup-debug/).' }
+    } finally {
+        Pop-Location
+    }
 }
 
 $apps = [ordered]@{
@@ -157,38 +198,43 @@ $apps = [ordered]@{
 
 switch ($Command) {
     'init' {
-        if (Test-Path .env) { Write-Host '.env already exists; leaving it alone.'; return }
+        if (Test-Path $EnvFile) { Write-Host '.env already exists; leaving it alone.'; return }
         (Get-Content .env.example) `
             -replace '^POSTGRES_PASSWORD=.*', "POSTGRES_PASSWORD=$(New-Secret)" `
             -replace '^ATL_DB_PASSWORD=.*', "ATL_DB_PASSWORD=$(New-Secret)" |
-            Set-Content .env -Encoding ascii
+            Set-Content $EnvFile -Encoding ascii
         Write-Host 'Created .env with random database passwords. Set versions/license there if needed.'
     }
     'up' {
-        if (-not (Test-Path .env)) { throw 'No .env yet. Run ./dc.ps1 init first.' }
-        docker compose up -d
+        if (-not (Test-Path $EnvFile)) { & $PSCommandPath init -EnvFile $EnvFile -Project $Project }
+        Invoke-Compose up -d
         if ($LASTEXITCODE) { throw 'docker compose up failed' }
         Write-Host 'Waiting for apps (first start takes several minutes)...'
         Wait-Apps @($apps.Keys)
+        if (-not $NoSetup) { Invoke-Setup }
         Write-Host ''
         Write-Host "Jira:       http://jira.localhost:$(Get-EnvValue 'JIRA_PORT' '8080')"
         Write-Host "Confluence: http://confluence.localhost:$(Get-EnvValue 'CONFLUENCE_PORT' '8090')"
+        if (-not $NoSetup) {
+            Write-Host "Admin logins and tokens are in $EnvFile (JIRA_ADMIN_*, CONFLUENCE_ADMIN_*, *_PAT)."
+        }
     }
+    'setup' { Invoke-Setup }
     'status' {
-        docker compose ps
+        Invoke-Compose ps
         foreach ($k in $apps.Keys) { Write-Host ("{0,-11} {1}" -f $k, (Get-AppState $apps[$k])) }
     }
     'logs' {
-        if ($Service) { docker compose logs -f --tail 200 $Service } else { docker compose logs -f --tail 100 }
+        if ($Service) { Invoke-Compose logs -f --tail 200 $Service } else { Invoke-Compose logs -f --tail 100 }
     }
-    'down' { docker compose down }
+    'down' { Invoke-Compose down }
     'reset' {
         $answer = Read-Host 'This deletes ALL Jira/Confluence/Postgres data volumes. Type "reset" to confirm'
         if ($answer -ne 'reset') { Write-Host 'Aborted.'; return }
-        docker compose down -v
+        Invoke-Compose down -v
     }
     'license' {
-        if (-not (Test-Path .env)) { throw 'No .env yet. Run ./dc.ps1 init first.' }
+        if (-not (Test-Path $EnvFile)) { throw 'No .env yet. Run ./dc.ps1 init first.' }
         $targets = if (-not $Service -or $Service -eq 'all') { @($LicenseProducts.Keys) } else { @($Service) }
         foreach ($t in $targets) { if (-not $LicenseProducts.Contains($t)) { throw "Unknown product '$t'. Use jira, confluence or all." } }
         if ($Copy -and $targets.Count -ne 1) { throw '-Copy needs a single product: ./dc.ps1 license jira -Copy' }
