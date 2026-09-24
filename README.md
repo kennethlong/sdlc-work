@@ -4,13 +4,37 @@ A toolset of AI agent skills, subagents, hooks, and scripts covering the full so
 lifecycle, built on Claude Code and portable Agent Skills. It started from
 [`ai-native-starter-pack`](https://github.com/coleam00/ai-native-starter-pack).
 
-**Status:** research / design. Local Atlassian DC test stack in `infra/`.
+**Status:** building slice 1 of the Atlassian bridge. Local Jira/Confluence DC stack in `infra/`.
 
 ## Docs
 
 - [01 – Starter pack assessment](docs/research/01-starter-pack-assessment.md): what the pack covers, defects, what to keep
 - [02 – Landscape](docs/research/02-landscape.md): Spec Kit, BMAD, GSD, OpenSpec, Kiro, superpowers, and more; building blocks; gaps
 - [03 – Proposal (draft)](docs/research/03-proposal.md): positioning, repo shape, language choices, roadmap, open questions
+
+## Layout
+
+| Path | What |
+|---|---|
+| `packages/atlassian` | TypeScript Jira/Confluence DC client (markdown in/out), basis for the GSD bridge |
+| `scripts/mcp-atlassian.mjs` | Launches [mcp-atlassian](https://github.com/sooperset/mcp-atlassian) against the configured DC instances; wired in `.mcp.json` |
+| `infra/atlassian-dc` | One-command local Jira + Confluence DC (`./dc.ps1 up`) |
+| `docs/` | Research and design |
+
+## Develop
+
+```powershell
+npm install
+npm run typecheck
+npm test                 # unit + live (live tests skip when no Jira/Confluence is configured)
+npm run test:live        # only the integration tests against infra/atlassian-dc
+```
+
+Node 24 runs the TypeScript directly (type stripping); there is no build step.
+
+## Design
+
+- [01 – Atlassian bridge](docs/design/01-atlassian-bridge.md)
 
 ## Infrastructure
 

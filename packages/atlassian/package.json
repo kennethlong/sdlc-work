@@ -1,0 +1,21 @@
+{
+  "name": "@sdlc/atlassian",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Jira + Confluence Data Center client and GSD bridge",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "sdlc-atl": "./src/cli.ts"
+  },
+  "dependencies": {
+    "@joplin/turndown-plugin-gfm": "^1.0.68",
+    "marked": "^18.0.14",
+    "turndown": "^7.2.4"
+  },
+  "devDependencies": {
+    "@types/turndown": "^5.0.6"
+  }
+}
