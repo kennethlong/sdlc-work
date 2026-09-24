@@ -38,6 +38,27 @@ Then finish each setup wizard in the browser:
 Get the license keys from the developer license in my.atlassian.com (ask the Atlassian billing/technical
 contact). **Never commit `.env`**; it is gitignored.
 
+## Test licenses until the developer license arrives
+
+Atlassian publishes [timebomb licenses](https://developer.atlassian.com/platform/marketplace/timebomb-licenses-for-testing-server-apps/)
+for testing: 10 users, **valid 3 hours from when applied**. `dc.ps1` fetches them from that page:
+
+```powershell
+./dc.ps1 license                    # fetch current keys into .env (JIRA_LICENSE_KEY, CONFLUENCE_LICENSE_KEY)
+./dc.ps1 license jira -Copy         # also copy the Jira key to the clipboard, for the setup wizard
+./dc.ps1 license confluence -Copy
+./dc.ps1 license all -Apply         # install fresh keys into already-set-up instances (after expiry)
+```
+
+`-Apply` needs the instance past its setup wizard:
+- **Jira:** installed via REST (`/rest/plugins/applications/1.0/installed/jira-software/license`), no restart.
+  Needs `JIRA_PAT` for an admin user, or `JIRA_ADMIN_USER`/`JIRA_ADMIN_PASSWORD`, in `.env`.
+- **Confluence:** rewrites `atlassian.license.message` in `confluence.cfg.xml` and restarts Confluence
+  (about 1–2 minutes). Don't use `ATL_FORCE_CFG_UPDATE` for this: it regenerates the whole file from the image
+  template, resetting `setupStep`, which sends a configured instance back into the setup wizard.
+
+When the real developer license arrives, paste it in each app's license admin page. The data is kept.
+
 ## Day to day
 
 ```powershell
