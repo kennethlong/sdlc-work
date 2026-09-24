@@ -1,0 +1,31 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Node / TypeScript
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Agent runtime output
+logs/
+*.log
+.claude/settings.local.json
+worktrees/
