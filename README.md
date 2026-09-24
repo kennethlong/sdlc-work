@@ -10,4 +10,5 @@ lifecycle, built on Claude Code and portable Agent Skills. It started from
 
 - [01 – Starter pack assessment](docs/research/01-starter-pack-assessment.md): what the pack covers, defects, what to keep
 - [02 – Landscape](docs/research/02-landscape.md): Spec Kit, BMAD, GSD, OpenSpec, Kiro, superpowers, and more; building blocks; gaps
+- [Local Jira + Confluence DC](infra/atlassian-dc/README.md): Docker stack for bridge development
 - [03 – Proposal (draft)](docs/research/03-proposal.md): positioning, repo shape, language choices, roadmap, open questions
