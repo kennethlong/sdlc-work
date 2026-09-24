@@ -61,6 +61,15 @@ sdlc-work/
 7. **Release & ops:** release notes/changelog, rollout checklist; incident → RCA → rule → regression test.
 8. **Measurement:** OTel preset, `metrics.jsonl`, per-skill evals in CI.
 
+## Decisions (2026-09-24)
+
+- **Tracker:** Jira + Confluence. Develop against free Atlassian Cloud sites via the Rovo MCP server.
+- **Portability:** portable to other agents from day one (Agent Skills + AGENTS.md; no Claude-only features in core skills).
+- **Starter pack:** rewrite, using it as inspiration only. No copied content, so its missing license doesn't matter.
+- **GSD:** recommended to build on **GSD Core** (`@opengsd/gsd-core`, the community continuation) as the
+  plan/execute engine behind an adapter, and to spend our effort on the Jira/Confluence bridge and the phases GSD lacks.
+  The locally installed `get-shit-done-cc@1.42.3` is from the archived upstream and should be migrated. Pending user confirmation.
+
 ## Open questions
 
 - Which tracker(s) are real for you: Jira/Confluence, GitHub Issues, Linear?
