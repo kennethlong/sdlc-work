@@ -1,0 +1,50 @@
+// sdlc code review for Bitbucket Data Center pull requests, on Jenkins.
+//
+// UNTESTED TEMPLATE: adjust and verify on a test repository first.
+// Trigger it for PRs with your Bitbucket integration (e.g. the "Bitbucket Server Integration" plugin's
+// pull-request trigger, or a multibranch pipeline that builds PR refs). Findings appear as one PR comment
+// (updated in place), Code Insights annotations on the diff, and a verdict on the Jira issue. The build fails on
+// blocking (critical/high) findings.
+//
+// Agent needs: git, Node >= 22, Claude Code CLI (`npm i -g @anthropic-ai/claude-code`).
+// Credentials (Jenkins credential ids below): an Anthropic API key, a Bitbucket HTTP access token (repo read + PR
+// comment; project/repo admin is not needed), and optionally a Jira PAT.
+pipeline {
+  agent any
+  options { timeout(time: 20, unit: 'MINUTES') }
+  environment {
+    ANTHROPIC_API_KEY  = credentials('anthropic-api-key')
+    BITBUCKET_BASE_URL = 'https://bitbucket.example.com'
+    BITBUCKET_TOKEN    = credentials('bitbucket-review-token')
+    JIRA_BASE_URL      = 'https://jira.example.com'
+    JIRA_PAT           = credentials('jira-pat')
+    SDLC_WORK          = "${WORKSPACE}/.sdlc-work"
+  }
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+        sh 'git fetch origin "+refs/heads/*:refs/remotes/origin/*"'   // base branch for base...HEAD
+        dir('.sdlc-work') { git url: 'https://bitbucket.example.com/scm/tools/sdlc-work.git', credentialsId: 'bitbucket-review-token' }
+      }
+    }
+    stage('Review') {
+      steps {
+        // CHANGE_TARGET is set by multibranch PR builds; otherwise pass the base explicitly.
+        sh '''
+          claude -p "Run the /sdlc:review skill for this branch against ${CHANGE_TARGET:-main}. The PR already exists, so publish the review with the skill's publish step. Do not modify files, commit or push." \
+            --plugin-dir "$SDLC_WORK/plugins/sdlc" --allowedTools "Bash,Read,Grep,Glob" --max-turns 60
+        '''
+      }
+    }
+    stage('Gate') {
+      steps {
+        sh '''
+          f=$(ls -t .sdlc/reviews/*.md 2>/dev/null | head -1)
+          [ -n "$f" ] || { echo "no review file produced"; exit 1; }
+          node "$SDLC_WORK/plugins/sdlc/bin/sdlc-atl.mjs" publish-review "$f" --gate
+        '''
+      }
+    }
+  }
+}

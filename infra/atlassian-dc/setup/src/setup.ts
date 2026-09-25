@@ -12,6 +12,7 @@ import { randomBytes } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { EnvFile } from './env.ts';
+import { setupBitbucket } from './bitbucket.ts';
 import { timebombKey, type Product } from './licenses.ts';
 import { appState, createPat, createPatViaLogin, type Admin, type Auth } from './rest.ts';
 import { jiraWizard, ensureJiraProject } from './jira.ts';
@@ -105,4 +106,5 @@ try {
 } finally {
   await browser.close();
 }
+if (!args.only || args.only === 'bitbucket') await setupBitbucket(env);
 console.log('Done.');

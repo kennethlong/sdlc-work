@@ -49,3 +49,5 @@ Plan: .claude/plans/<ticket>-<slug>.md
 
 Be honest: a ✗ is useful, a false ✓ is harmful. Commit the report with the work (the hook syncs it), or run
 `/sdlc:sync`. If the recommendations include a rule, propose adding it to AGENTS.md.
+
+Then ship it: `/sdlc:review` (branch review, published to the PR and Jira) and `/sdlc:pr` (open or update the pull request).

@@ -8,12 +8,15 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-function loadConfig(opts = {}) {
+function envLookup(opts = {}) {
   const userFile = join(homedir(), ".sdlc", "atlassian.env");
   const explicit = process.env.SDLC_ATLASSIAN_ENV === "user" ? userFile : process.env.SDLC_ATLASSIAN_ENV;
   const file = opts.envFile ?? explicit ?? findLocalStackEnv(opts.cwd ?? process.cwd()) ?? (existsSync(userFile) ? userFile : void 0);
   const fromFile = file && existsSync(file) ? parseEnv(readFileSync(file, "utf8")) : {};
-  const get = (k) => process.env[k] || fromFile[k] || "";
+  return (k) => process.env[k] || fromFile[k] || "";
+}
+function loadConfig(opts = {}) {
+  const get = envLookup(opts);
   const product = (p) => {
     const baseUrl = get(`${p}_BASE_URL`).replace(/\/+$/, "");
     if (!baseUrl) return void 0;

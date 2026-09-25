@@ -14,8 +14,10 @@ export type SdlcConfig = {
   prdPageId?: string;
   /** piv engine: which docs/specs/*.md to use when there are several. */
   spec?: string;
-  jira?: { issueType?: string; transitions?: Partial<Record<WorkStatus, string>> };
+  /** transitions: work status -> Jira status; `review` (optional) is applied when a PR is opened. */
+  jira?: { issueType?: string; transitions?: Partial<Record<WorkStatus | 'review', string>>; doneWhen?: 'verified' | 'merged' };
   confluence?: { space?: string };
+  git?: { base?: string };
 };
 
 export function readSdlcConfig(root: string): SdlcConfig {

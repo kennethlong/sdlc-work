@@ -9,6 +9,10 @@
  *   sdlc-atl import KEY                                        write the ticket brief .sdlc/tickets/KEY.md
  *   sdlc-atl publish-rca KEY [--file docs/rca/KEY.md]          publish a bug's RCA to Confluence + the bug
  *   sdlc-atl escalate KEY --epic EPIC                          promote to Track A
+ * Review + PR (GitHub or Bitbucket Data Center, from the origin remote):
+ *   sdlc-atl review-scope [--base B]                           what a review covers (base...HEAD), as JSON
+ *   sdlc-atl pr [--base B] [--draft] [--title T] [--dry-run]    open or update the PR for this branch, link Jira
+ *   sdlc-atl publish-review FILE [--gate]                      post a review file to the PR (+ Bitbucket annotations, Jira)
  * Both:
  *   sdlc-atl sync [--quiet]                                    move issues forward, publish verification reports
  *   sdlc-atl page pull PAGE_ID [--out FILE]                    Confluence page -> markdown (e.g. a PRD)
@@ -30,6 +34,9 @@ import { fileBreakdown, type FilingReport } from './filing.ts';
 import { StateFile } from './state.ts';
 import { syncProgress, type SyncEntry, type SyncReport } from './sync.ts';
 import { escalateTicket, importTicket, publishRca } from './tickets.ts';
+import { reviewScope } from './git.ts';
+import { resolveHost } from './hosts/index.ts';
+import { openPr, publishReview } from './pr.ts';
 import { cyclicItems, waves } from './work.ts';
 
 const [command, ...rest] = process.argv.slice(2);
@@ -47,6 +54,10 @@ const { values: opt, positionals } = parseArgs({
     title: { type: 'string' },
     parent: { type: 'string' },
     quiet: { type: 'boolean', default: false },
+    base: { type: 'string' },
+    draft: { type: 'boolean', default: false },
+    gate: { type: 'boolean', default: false },
+    key: { type: 'string' },
     'issue-type': { type: 'string' },
     'dry-run': { type: 'boolean', default: false },
     json: { type: 'boolean', default: false },
@@ -128,6 +139,8 @@ try {
           transitions: cfg.jira?.transitions,
           confluenceSpace: opt.space ?? cfg.confluence?.space,
           dryRun: opt['dry-run'],
+          doneWhen: cfg.jira?.doneWhen,
+          prState: cfg.jira?.doneWhen === 'merged' ? async (id) => (await resolveHost(root, { envFile: opt.env }).getPr(id))?.state : undefined,
         });
       });
       if (result === 'locked') {
@@ -139,6 +152,63 @@ try {
         const changes = [...result.items, ...result.tickets].filter((i) => i.transition.action === 'moved' || ['created', 'updated'].includes(i.report?.action ?? ''));
         for (const i of changes) console.log(`${new Date().toISOString()} ${i.key} ${i.status}: ${i.transition.action === 'moved' ? `-> ${i.transition.to}` : ''} ${i.report ? `report ${i.report.action}` : ''}`.trim());
       } else out(result, () => formatSync(result, opt['dry-run']!));
+      break;
+    }
+
+    case 'review-scope': {
+      const s = reviewScope(root, opt.base ?? cfg.git?.base);
+      out(s, () => JSON.stringify(s, null, 2));
+      break;
+    }
+
+    case 'pr': {
+      const c = clients();
+      const optional = <T,>(f: () => T) => {
+        try {
+          return f();
+        } catch {
+          return undefined; // Jira/Confluence are optional for PRs
+        }
+      };
+      const r = await openPr({
+        root,
+        host: resolveHost(root, { envFile: opt.env }),
+        jira: optional(() => c.jira),
+        confluence: optional(() => c.confluence),
+        state: new StateFile(root),
+        base: opt.base ?? cfg.git?.base,
+        title: opt.title,
+        key: opt.key?.toUpperCase(),
+        draft: opt.draft,
+        dryRun: opt['dry-run'],
+        reviewStatus: cfg.jira?.transitions?.review,
+      });
+      out(r, () => `${r.action}: ${r.pr?.url ?? '(new PR)'}\n  title: ${r.title}${r.key ? `\n  jira: ${r.key}` : ''}${opt['dry-run'] ? `\n--- body ---\n${r.body}` : ''}`);
+      break;
+    }
+
+    case 'publish-review': {
+      const file = positionals[0];
+      if (!file) throw new Error('publish-review FILE [--gate]');
+      let jira;
+      try {
+        jira = clients().jira;
+      } catch {
+        jira = undefined;
+      }
+      const r = await publishReview({ root, host: resolveHost(root, { envFile: opt.env }), jira, file: resolve(file), base: opt.base ?? cfg.git?.base });
+      out(r, () =>
+        [
+          `review ${r.verdict}: ${Object.entries(r.counts).filter(([, n]) => n).map(([s, n]) => `${n} ${s}`).join(', ') || 'no findings'}`,
+          `  PR comment ${r.comment}: ${r.pr.url}`,
+          `  line annotations: ${r.annotations ? 'published (Code Insights)' : 'not supported by this host (summary comment only)'}`,
+          `  jira: ${r.jiraCommented ? 'commented' : 'no change'}`,
+        ].join('\n'),
+      );
+      if (opt.gate && r.blocking) {
+        console.error(`gate: ${r.blocking} blocking (critical/high) finding(s)`);
+        process.exit(2);
+      }
       break;
     }
 
@@ -222,7 +292,7 @@ try {
     }
 
     default:
-      console.error('usage: sdlc-atl <breakdown | file-breakdown | import | publish-rca | escalate | sync | page | hooks | init | whoami> [options]  (see the header of src/cli.ts)');
+      console.error('usage: sdlc-atl <breakdown | file-breakdown | import | publish-rca | escalate | review-scope | pr | publish-review | sync | page | hooks | init | whoami> [options]  (see the header of src/cli.ts)');
       process.exit(command ? 1 : 0);
   }
 } catch (e) {

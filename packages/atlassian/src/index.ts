@@ -1,4 +1,4 @@
-export { authHeader, detectFlavor, loadConfig, parseEnv, type AtlassianConfig, type Auth, type Flavor, type ProductConfig } from './config.ts';
+export { authHeader, detectFlavor, envLookup, loadConfig, parseEnv, type EnvOptions, type AtlassianConfig, type Auth, type Flavor, type ProductConfig } from './config.ts';
 export { AtlassianError, HttpClient } from './http.ts';
 export { JiraClient, type JiraIssue, type NewIssue } from './jira.ts';
 export { ConfluenceClient, type ConfluencePage } from './confluence.ts';
@@ -33,3 +33,7 @@ export { fileBreakdown, itemLabel, storyDescription, type FilingReport } from '.
 export { StateFile, type BridgeState, type TicketState } from './state.ts';
 export { DEFAULT_TRANSITIONS, syncProgress, type SyncEntry, type SyncReport, type TransitionMap } from './sync.ts';
 export { acceptanceCriteria, escalateTicket, importTicket, publishRca, type ImportResult, type RcaReport } from './tickets.ts';
+export { currentBranch, defaultBase, keyFrom, pushState, reviewScope, type ReviewScope } from './git.ts';
+export { BitbucketDcHost, GitHubHost, parseRemote, resolveHost, type Finding, type GitHost, type HostKind, type PullRequest, type RemoteInfo } from './hosts/index.ts';
+export { counts, isBlocking, readReview, renderJiraComment, renderPrComment, REVIEW_MARKER, type Review, type Verdict } from './review.ts';
+export { openPr, publishReview, type PrResult, type ReviewPublishResult } from './pr.ts';

@@ -56,6 +56,7 @@ $TimebombUrl = 'https://developer.atlassian.com/platform/marketplace/timebomb-li
 $LicenseProducts = [ordered]@{
     jira       = @{ Heading = 'Jira Software Data Center'; EnvVar = 'JIRA_LICENSE_KEY' }
     confluence = @{ Heading = 'Confluence Data Center'; EnvVar = 'CONFLUENCE_LICENSE_KEY' }
+    bitbucket  = @{ Heading = 'Bitbucket Data Center'; EnvVar = 'BITBUCKET_LICENSE_KEY' }
 }
 
 # Native tools write progress to stderr; under PS 5.1 that becomes a terminating error when output is
@@ -160,6 +161,14 @@ function Install-JiraLicense([string]$Key) {
     Write-Host "  jira: license installed (expires $($r.license.expiryDateString); valid=$($r.license.valid))"
 }
 
+function Install-BitbucketLicense([string]$Key) {
+    $user = Get-EnvValue 'BITBUCKET_ADMIN_USER' 'admin'
+    $pass = Get-EnvValue 'BITBUCKET_ADMIN_PASSWORD' ''
+    $basic = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("${user}:${pass}"))
+    $r = Invoke-RestMethod -Method Post -Uri "$($apps.bitbucket)/rest/api/1.0/admin/license" -Headers @{ Authorization = "Basic $basic"; 'X-Atlassian-Token' = 'no-check' } -ContentType 'application/json' -Body (@{ license = $Key } | ConvertTo-Json)
+    Write-Host "  bitbucket: license installed (expires $([DateTimeOffset]::FromUnixTimeMilliseconds($r.expiryDate).ToString('u')))"
+}
+
 function Install-ConfluenceLicense([string]$Key) {
     # Confluence keeps the license in confluence.cfg.xml. We edit that one property in place and
     # restart. Do NOT use ATL_FORCE_CFG_UPDATE for this: regenerating the file from the container
@@ -205,15 +214,46 @@ function Invoke-Setup {
 }
 
 function Show-Creds {
-    foreach ($p in 'JIRA', 'CONFLUENCE') {
-        $url = if ($p -eq 'JIRA') { "http://jira.localhost:$(Get-EnvValue 'JIRA_PORT' '8080')" } else { "http://confluence.localhost:$(Get-EnvValue 'CONFLUENCE_PORT' '8090')" }
-        Write-Host ("{0,-11} {1}  user: {2}  password: {3}" -f $p.ToLower(), $url, (Get-EnvValue "$($p)_ADMIN_USER" '?'), (Get-EnvValue "$($p)_ADMIN_PASSWORD" '?'))
+    foreach ($p in 'JIRA', 'CONFLUENCE', 'BITBUCKET') {
+        $name = $p.ToLower()
+        Write-Host ("{0,-11} {1}  user: {2}  password: {3}" -f $name, $publicUrls[$name], (Get-EnvValue "$($p)_ADMIN_USER" 'admin'), (Get-EnvValue "$($p)_ADMIN_PASSWORD" '?'))
     }
+}
+
+# Bitbucket sets itself up from SETUP_* env vars at first start, so its license and admin password must exist
+# before the container is created. Other apps get theirs during `setup`.
+function Initialize-BitbucketSetup {
+    if (-not (Get-EnvValue 'BITBUCKET_ADMIN_USER' '')) { Set-EnvValue 'BITBUCKET_ADMIN_USER' 'admin' }
+    if (-not (Get-EnvValue 'BITBUCKET_ADMIN_PASSWORD' '')) { Set-EnvValue 'BITBUCKET_ADMIN_PASSWORD' (New-Secret) }
+    if (-not (Get-EnvValue 'BITBUCKET_LICENSE_KEY' '')) {
+        $lic = (Get-TimebombLicenses)[$LicenseProducts.bitbucket.Heading]
+        if (-not $lic) { throw 'No Bitbucket Data Center key on the timebomb page; set BITBUCKET_LICENSE_KEY in the env file.' }
+        Set-EnvValue 'BITBUCKET_LICENSE_KEY' $lic.Key
+        Write-Host 'bitbucket: using Atlassian 3-hour test license'
+    }
+}
+
+# The postgres init script only runs on an empty volume; re-run it (idempotent) so apps added later get a database.
+function Initialize-Databases {
+    Invoke-Compose up -d postgres | Out-Null
+    for ($i = 0; $i -lt 30; $i++) {
+        Invoke-Compose exec -T postgres pg_isready -U postgres | Out-Null
+        if (-not $LASTEXITCODE) { break }
+        Start-Sleep -Seconds 2
+    }
+    Invoke-Compose exec -T postgres bash /docker-entrypoint-initdb.d/01-create-databases.sh | Out-Null
+    if ($LASTEXITCODE) { throw 'Creating app databases failed' }
 }
 
 $apps = [ordered]@{
     jira       = "http://localhost:$(Get-EnvValue 'JIRA_PORT' '8080')"
     confluence = "http://localhost:$(Get-EnvValue 'CONFLUENCE_PORT' '8090')"
+    bitbucket  = "http://localhost:$(Get-EnvValue 'BITBUCKET_PORT' '7990')"
+}
+$publicUrls = [ordered]@{
+    jira       = "http://jira.localhost:$(Get-EnvValue 'JIRA_PORT' '8080')"
+    confluence = "http://confluence.localhost:$(Get-EnvValue 'CONFLUENCE_PORT' '8090')"
+    bitbucket  = "http://bitbucket.localhost:$(Get-EnvValue 'BITBUCKET_PORT' '7990')"
 }
 
 switch ($Command) {
@@ -227,14 +267,15 @@ switch ($Command) {
     }
     'up' {
         if (-not (Test-Path $EnvFile)) { & $PSCommandPath init -EnvFile $EnvFile -Project $Project }
+        Initialize-BitbucketSetup
+        Initialize-Databases
         Invoke-Compose up -d
         if ($LASTEXITCODE) { throw 'docker compose up failed' }
         Write-Host 'Waiting for apps (first start takes several minutes)...'
         Wait-Apps @($apps.Keys)
         if (-not $NoSetup) { Invoke-Setup }
         Write-Host ''
-        Write-Host "Jira:       http://jira.localhost:$(Get-EnvValue 'JIRA_PORT' '8080')"
-        Write-Host "Confluence: http://confluence.localhost:$(Get-EnvValue 'CONFLUENCE_PORT' '8090')"
+        foreach ($k in $publicUrls.Keys) { Write-Host ("{0,-11} {1}" -f "$($k):", $publicUrls[$k]) }
         if (-not $NoSetup) {
             Write-Host ''
             Show-Creds
@@ -262,7 +303,7 @@ switch ($Command) {
         # file (setup reuses them); drops the PATs, which belong to the old instance.
         Invoke-Compose down -v
         if (Test-Path $EnvFile) {
-            (Get-Content $EnvFile) | Where-Object { $_ -notmatch '^(JIRA|CONFLUENCE)_PAT=' } | Set-Content $EnvFile -Encoding ascii
+            (Get-Content $EnvFile) | Where-Object { $_ -notmatch '^((JIRA|CONFLUENCE)_PAT|BITBUCKET_TOKEN)=' } | Set-Content $EnvFile -Encoding ascii
         }
         & $PSCommandPath up -EnvFile $EnvFile -Project $Project -TimeoutMinutes $TimeoutMinutes
     }
@@ -291,7 +332,11 @@ switch ($Command) {
             if ($Copy) { Set-Clipboard -Value $key; Write-Host "  $t key copied to clipboard." }
             if ($Apply) {
                 if ((Get-AppState $apps[$t]) -ne 'RUNNING') { throw "$t is not RUNNING (finish its setup wizard first, then use -Apply)." }
-                if ($t -eq 'jira') { Install-JiraLicense $key } else { Install-ConfluenceLicense $key }
+                switch ($t) {
+                    'jira' { Install-JiraLicense $key }
+                    'confluence' { Install-ConfluenceLicense $key }
+                    'bitbucket' { Install-BitbucketLicense $key }
+                }
             }
         }
     }

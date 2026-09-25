@@ -42,11 +42,14 @@ export class HttpClient {
   readonly baseUrl: string;
   private readonly authorization: string;
   private readonly retries: number;
+  private readonly headers: Record<string, string>;
 
-  constructor(baseUrl: string, auth: Auth, retries = 3) {
+  /** `headers` replace the Atlassian defaults (Accept JSON + XSRF bypass), e.g. for GitHub's API. */
+  constructor(baseUrl: string, auth: Auth, opts: { retries?: number; headers?: Record<string, string> } = {}) {
     this.baseUrl = baseUrl.replace(/\/+$/, '');
     this.authorization = authHeader(auth);
-    this.retries = retries;
+    this.retries = opts.retries ?? 3;
+    this.headers = opts.headers ?? { Accept: 'application/json', 'X-Atlassian-Token': 'no-check' };
   }
 
   async request<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
@@ -58,8 +61,7 @@ export class HttpClient {
         method,
         headers: {
           Authorization: this.authorization,
-          Accept: 'application/json',
-          'X-Atlassian-Token': 'no-check',
+          ...this.headers,
           ...(opts.body !== undefined ? { 'Content-Type': opts.contentType ?? 'application/json' } : {}),
         },
         body: opts.body === undefined ? undefined : JSON.stringify(opts.body),

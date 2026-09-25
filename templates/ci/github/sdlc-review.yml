@@ -1,0 +1,63 @@
+# sdlc code review on GitHub pull requests: copy to .github/workflows/sdlc-review.yml
+#
+# UNTESTED TEMPLATE: adjust and verify on a test repository first.
+# Follows the reference's claude-review.yml (read-only review, one PR comment), plus:
+#   - reviews the whole branch (base...HEAD) via the sdlc plugin's /sdlc:review skill
+#   - publishes one comment that is updated in place, and a verdict comment on the Jira issue (if Jira secrets are set)
+#   - fails the check when there are blocking (critical/high) findings
+#
+# Secrets: ANTHROPIC_API_KEY (or CLAUDE_CODE_OAUTH_TOKEN); optional JIRA_BASE_URL + JIRA_PAT (DC) or JIRA_EMAIL + JIRA_API_TOKEN (Cloud).
+name: sdlc review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+  issue_comment:
+    types: [created]
+
+jobs:
+  review:
+    if: |
+      (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (
+        github.event_name == 'issue_comment' && github.event.issue.pull_request
+        && contains(github.event.comment.body, '@sdlc-review')
+        && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read        # read-only: the reviewer never pushes
+      pull-requests: write  # the review comment
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: <your-org>/sdlc-work   # where the sdlc plugin lives
+          path: .sdlc-work
+      - uses: anthropics/claude-code-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_PAT: ${{ secrets.JIRA_PAT }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          trigger_phrase: "@sdlc-review"
+          prompt: |
+            Run the /sdlc:review skill for this pull request's branch against its base branch
+            (${{ github.event.pull_request.base.ref || 'the default branch' }}). The PR already exists, so publish the
+            review with the skill's publish step. Do not modify files, commit or push.
+          claude_args: |
+            --plugin-dir .sdlc-work/plugins/sdlc
+            --max-turns 60
+      - name: Gate on blocking findings
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          f=$(ls -t .sdlc/reviews/*.md 2>/dev/null | head -1)
+          [ -n "$f" ] || { echo "no review file produced"; exit 1; }
+          node .sdlc-work/plugins/sdlc/bin/sdlc-atl.mjs publish-review "$f" --gate

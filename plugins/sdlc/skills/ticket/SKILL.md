@@ -43,3 +43,5 @@ user's agreement before planning; the brief says so when there are none.
 Commit the work and the planning artifacts with the key in the message (e.g. `feat(SDLC-12): export button`).
 With the hook installed, the Jira issue moves to In Progress when planned and to Done when verified, and the
 verification report is published to Confluence. Without the hook, run `/sdlc:sync`.
+
+Then ship it: `/sdlc:review` (branch review, published to the PR and Jira) and `/sdlc:pr` (open or update the pull request).

@@ -19,13 +19,20 @@ export type AtlassianConfig = { jira?: ProductConfig; confluence?: ProductConfig
  *   <P>_EMAIL + <P>_API_TOKEN            Cloud (Basic); ATLASSIAN_EMAIL / ATLASSIAN_API_TOKEN cover both products
  *   <P>_FLAVOR = dc | cloud              optional; default: cloud for *.atlassian.net / *.jira.com, else dc
  */
-export function loadConfig(opts: { envFile?: string; cwd?: string } = {}): AtlassianConfig {
+export type EnvOptions = { envFile?: string; cwd?: string };
+
+/** Setting lookup shared by every integration: process env first, then the resolved env file (see loadConfig). */
+export function envLookup(opts: EnvOptions = {}): (key: string) => string {
   const userFile = join(homedir(), '.sdlc', 'atlassian.env');
   // SDLC_ATLASSIAN_ENV=user selects the per-user file even inside a repo that has a local stack.
   const explicit = process.env.SDLC_ATLASSIAN_ENV === 'user' ? userFile : process.env.SDLC_ATLASSIAN_ENV;
   const file = opts.envFile ?? explicit ?? findLocalStackEnv(opts.cwd ?? process.cwd()) ?? (existsSync(userFile) ? userFile : undefined);
   const fromFile = file && existsSync(file) ? parseEnv(readFileSync(file, 'utf8')) : {};
-  const get = (k: string) => process.env[k] || fromFile[k] || '';
+  return (k: string) => process.env[k] || fromFile[k] || '';
+}
+
+export function loadConfig(opts: EnvOptions = {}): AtlassianConfig {
+  const get = envLookup(opts);
 
   const product = (p: 'JIRA' | 'CONFLUENCE'): ProductConfig | undefined => {
     const baseUrl = get(`${p}_BASE_URL`).replace(/\/+$/, '');

@@ -43,3 +43,5 @@ nothing else regressed.
 
 Commit with the key (e.g. `fix(SDLC-7): derive export headers from schema`). Progress syncs through the hook,
 or run `/sdlc:sync`. If the RCA doc changed while fixing, run `sdlc-atl publish-rca $1` again.
+
+Then ship it: `/sdlc:review` (branch review, published to the PR and Jira) and `/sdlc:pr` (open or update the pull request).

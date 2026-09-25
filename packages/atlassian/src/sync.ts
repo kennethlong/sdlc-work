@@ -48,6 +48,13 @@ export type SyncOptions = {
   root?: string;
   state: StateFile;
   transitions?: TransitionMap;
+  /**
+   * When is an issue Done? "verified" (default): when its work is verified. "merged": verified work goes to the
+   * `review` status (or stays In Progress) until its PR (recorded by `sdlc-atl pr`) is merged: the reference's
+   * order, where shipping comes after PR review. Needs `prState` to look PRs up.
+   */
+  doneWhen?: 'verified' | 'merged';
+  prState?: (id: string) => Promise<'open' | 'merged' | 'declined' | undefined>;
   /** Space for report pages when there is no breakdown page to nest them under (Track B, or unfiled PRD). */
   confluenceSpace?: string;
   dryRun?: boolean;
@@ -98,6 +105,14 @@ export async function syncProgress(opts: SyncOptions): Promise<SyncReport> {
     return byLabel;
   }
 
+  async function targetFor(key: string, status: WorkStatus): Promise<string | undefined> {
+    if (status !== 'complete' || opts.doneWhen !== 'merged') return transitions[status];
+    const pr = Object.values(state.data.prs ?? {}).find((p) => p.key === key);
+    const prState = pr && opts.prState ? await opts.prState(pr.id) : undefined;
+    if (prState === 'merged') return transitions.complete;
+    return (opts.transitions as Record<string, string> | undefined)?.review ?? transitions.executing;
+  }
+
   async function syncOne(key: string, id: string, title: string, status: WorkStatus, v: Verification | undefined, parent: ConfluencePage | undefined) {
     const issue = await jira.getIssue(key, 'status,summary');
     const entry: SyncEntry & { pageId?: string } = {
@@ -106,7 +121,7 @@ export async function syncProgress(opts: SyncOptions): Promise<SyncReport> {
       status,
       key,
       jiraStatus: issue?.fields.status?.name,
-      transition: await moveForward(key, issue?.fields.status, transitions[status]),
+      transition: await moveForward(key, issue?.fields.status, await targetFor(key, status)),
     };
     if (v) {
       const r = await publishVerification(key, title, v, parent);

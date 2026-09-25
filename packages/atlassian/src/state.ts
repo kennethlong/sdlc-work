@@ -8,6 +8,8 @@ export type BridgeState = {
   items: Record<string, { issueKey: string; verificationPageId?: string }>;
   /** Track B tickets imported with `sdlc-atl import`, by Jira key. */
   tickets?: Record<string, TicketState>;
+  /** PRs opened with `sdlc-atl pr`, by branch. */
+  prs?: Record<string, { id: string; url: string; host: string; repo: string; key?: string }>;
 };
 
 export type TicketState = {
