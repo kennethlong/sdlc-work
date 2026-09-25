@@ -121,6 +121,12 @@ describe.skipIf(!bbBase || !bbToken || !cfg.jira)('PR + review (live, Bitbucket 
       ['export2.ts', 1, 'LOW'],
     ]);
 
+    // Bitbucket shows raw HTML as text, so markers must use the invisible link-reference form.
+    const acts = await host['http'].get<{ values: { comment?: { text: string } }[] }>(`/rest/api/1.0/projects/SDLC/repos/sandbox/pull-requests/${r.pr.id}/activities`);
+    const texts = [...acts.values.flatMap((a) => (a.comment ? [a.comment.text] : [])), (await host['raw'](r.pr.id)).description ?? ''];
+    expect(texts.join('\n')).not.toContain('<!--');
+    expect(texts.join('\n')).toContain('[//]: # (sdlc-review)');
+
     const again = await publishReview({ root, host, jira, file: f, base });
     expect(again).toMatchObject({ comment: 'unchanged', jiraCommented: false });
 

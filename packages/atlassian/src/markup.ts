@@ -77,7 +77,8 @@ function inline(tokens: Token[] = []): string {
         case 'del':
           return `-${inline((t as Tokens.Del).tokens)}-`;
         case 'codespan':
-          return `{{${(t as Tokens.Codespan).text}}}`;
+          // Escape braces/brackets: Jira reads `{id}` inside {{...}} as a macro and `[x]` as a link.
+          return `{{${decode((t as Tokens.Codespan).text).replace(/[{}[\]]/g, '\\$&')}}}`;
         case 'link': {
           const l = t as Tokens.Link;
           const text = inline(l.tokens);
@@ -128,7 +129,7 @@ export function jiraWikiToMarkdown(wiki: string): string {
       return `| ${cols.join(' | ')} |\n|${cols.map(() => ' --- ').join('|')}|`;
     })
     .replace(/\{quote\}([\s\S]*?)\{quote\}/g, (_m, body: string) => body.trim().split('\n').map((l) => `> ${l}`).join('\n'))
-    .replace(/\{\{([^}]+)\}\}/g, '`$1`')
+    .replace(/\{\{((?:\\.|[^}\\])+)\}\}/g, (_m, code: string) => '`' + code.replace(/\\([{}[\]])/g, '$1') + '`')
     .replace(/\[([^|\]]+)\|([^\]]+)\]/g, '[$1]($2)')
     .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,:;!?]|$)/gm, '$1**$2**')
     .replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,:;!?]|$)/gm, '$1*$2*')

@@ -33,6 +33,12 @@ describe('markdownToJiraWiki', () => {
     expect(wiki).toContain('Some *bold*, _italic_, {{code}} and a [link|https://example.com].');
   });
 
+  it('escapes braces and brackets inside inline code, and round-trips them', () => {
+    const w = markdownToJiraWiki('Call `GET /reports/{id}/export.csv` or `a[0] < b`.');
+    expect(w).toBe('Call {{GET /reports/\\{id\\}/export.csv}} or {{a\\[0\\] < b}}.');
+    expect(jiraWikiToMarkdown(w)).toBe('Call `GET /reports/{id}/export.csv` or `a[0] < b`.');
+  });
+
   it('converts nested and ordered lists', () => {
     expect(wiki).toContain('* one\n* two\n** nested');
     expect(wiki).toContain('# first\n# second');

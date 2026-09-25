@@ -6,6 +6,13 @@ type BbPr = { id: number; version: number; title: string; description?: string; 
 type BbComment = { id: number; version: number; text: string };
 type BbActivity = { action: string; comment?: BbComment };
 
+/**
+ * Bitbucket escapes raw HTML in markdown, so an HTML-comment marker (`<!-- sdlc-review -->`) would show as text.
+ * Store it as a CommonMark link reference definition instead, which renders as nothing: `[//]: # (sdlc-review)`.
+ */
+const toBb = (md: string) => md.replace(/<!--\s*([\w.-]+)\s*-->/g, '[//]: # ($1)');
+const fromBb = (md: string) => md.replace(/^\[\/\/\]: # \(([\w.-]+)\)$/gm, '<!-- $1 -->');
+
 const SEVERITY: Record<Finding['severity'], 'HIGH' | 'MEDIUM' | 'LOW'> = { critical: 'HIGH', high: 'HIGH', medium: 'MEDIUM', low: 'LOW' };
 
 /**
@@ -69,7 +76,7 @@ export class BitbucketDcHost implements GitHost {
     return this.toPr(
       await this.http.post<BbPr>(`${this.repoPath}/pull-requests`, {
         title: pr.title,
-        description: pr.body,
+        description: toBb(pr.body),
         fromRef: this.ref(pr.source),
         toRef: this.ref(pr.target),
         ...(pr.draft ? { draft: true } : {}),
@@ -82,19 +89,19 @@ export class BitbucketDcHost implements GitHost {
     await this.http.put(`${this.repoPath}/pull-requests/${pr.id}`, {
       version: current.version,
       title: changes.title ?? current.title,
-      description: changes.body ?? current.description ?? '',
+      description: changes.body !== undefined ? toBb(changes.body) : (current.description ?? ''),
     });
   }
 
   async prBody(pr: PullRequest): Promise<string> {
-    return (await this.raw(pr.id)).description ?? '';
+    return fromBb((await this.raw(pr.id)).description ?? '');
   }
 
   async upsertComment(pr: PullRequest, marker: string, markdown: string) {
-    const text = `${markdown}\n\n${marker}`; // Bitbucket renders markdown; the marker is an invisible HTML comment
+    const text = `${markdown}\n\n${toBb(marker)}`;
     for (let start = 0; ; ) {
       const page = await this.http.get<{ values: BbActivity[]; isLastPage: boolean; nextPageStart?: number }>(`${this.repoPath}/pull-requests/${pr.id}/activities`, { start, limit: 100 });
-      const mine = page.values.find((a) => a.action === 'COMMENTED' && a.comment?.text.includes(marker))?.comment;
+      const mine = page.values.find((a) => a.action === 'COMMENTED' && (a.comment?.text.includes(toBb(marker)) || a.comment?.text.includes(marker)))?.comment;
       if (mine) {
         if (mine.text === text) return 'unchanged' as const;
         await this.http.put(`${this.repoPath}/pull-requests/${pr.id}/comments/${mine.id}`, { text, version: mine.version });

@@ -26625,7 +26625,7 @@ function inline(tokens = []) {
       case "del":
         return `-${inline(t.tokens)}-`;
       case "codespan":
-        return `{{${t.text}}}`;
+        return `{{${decode(t.text).replace(/[{}[\]]/g, "\\$&")}}}`;
       case "link": {
         const l3 = t;
         const text = inline(l3.tokens);
@@ -26662,7 +26662,7 @@ function jiraWikiToMarkdown(wiki) {
     const cols = cells.split("||");
     return `| ${cols.join(" | ")} |
 |${cols.map(() => " --- ").join("|")}|`;
-  }).replace(/\{quote\}([\s\S]*?)\{quote\}/g, (_m, body) => body.trim().split("\n").map((l3) => `> ${l3}`).join("\n")).replace(/\{\{([^}]+)\}\}/g, "`$1`").replace(/\[([^|\]]+)\|([^\]]+)\]/g, "[$1]($2)").replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,:;!?]|$)/gm, "$1**$2**").replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,:;!?]|$)/gm, "$1*$2*").replace(/(^|[\s(])-([^-\n]+)-(?=[\s).,:;!?]|$)/gm, "$1~~$2~~").replace(/^----\s*$/gm, "---");
+  }).replace(/\{quote\}([\s\S]*?)\{quote\}/g, (_m, body) => body.trim().split("\n").map((l3) => `> ${l3}`).join("\n")).replace(/\{\{((?:\\.|[^}\\])+)\}\}/g, (_m, code) => "`" + code.replace(/\\([{}[\]])/g, "$1") + "`").replace(/\[([^|\]]+)\|([^\]]+)\]/g, "[$1]($2)").replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,:;!?]|$)/gm, "$1**$2**").replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,:;!?]|$)/gm, "$1*$2*").replace(/(^|[\s(])-([^-\n]+)-(?=[\s).,:;!?]|$)/gm, "$1~~$2~~").replace(/^----\s*$/gm, "---");
   return s.replace(/\u0000(\d+)\u0000/g, (_m, i) => codeBlocks[Number(i)]).trim();
 }
 function markdownToStorage(md) {
@@ -27872,6 +27872,8 @@ function pushState(cwd) {
 import { execFileSync as execFileSync3 } from "node:child_process";
 
 // packages/atlassian/src/hosts/bitbucket.ts
+var toBb = (md) => md.replace(/<!--\s*([\w.-]+)\s*-->/g, "[//]: # ($1)");
+var fromBb = (md) => md.replace(/^\[\/\/\]: # \(([\w.-]+)\)$/gm, "<!-- $1 -->");
 var SEVERITY = { critical: "HIGH", high: "HIGH", medium: "MEDIUM", low: "LOW" };
 var BitbucketDcHost = class {
   kind = "bitbucket-dc";
@@ -27921,7 +27923,7 @@ var BitbucketDcHost = class {
     return this.toPr(
       await this.http.post(`${this.repoPath}/pull-requests`, {
         title: pr.title,
-        description: pr.body,
+        description: toBb(pr.body),
         fromRef: this.ref(pr.source),
         toRef: this.ref(pr.target),
         ...pr.draft ? { draft: true } : {}
@@ -27933,19 +27935,19 @@ var BitbucketDcHost = class {
     await this.http.put(`${this.repoPath}/pull-requests/${pr.id}`, {
       version: current.version,
       title: changes.title ?? current.title,
-      description: changes.body ?? current.description ?? ""
+      description: changes.body !== void 0 ? toBb(changes.body) : current.description ?? ""
     });
   }
   async prBody(pr) {
-    return (await this.raw(pr.id)).description ?? "";
+    return fromBb((await this.raw(pr.id)).description ?? "");
   }
   async upsertComment(pr, marker, markdown) {
     const text = `${markdown}
 
-${marker}`;
+${toBb(marker)}`;
     for (let start = 0; ; ) {
       const page = await this.http.get(`${this.repoPath}/pull-requests/${pr.id}/activities`, { start, limit: 100 });
-      const mine = page.values.find((a) => a.action === "COMMENTED" && a.comment?.text.includes(marker))?.comment;
+      const mine = page.values.find((a) => a.action === "COMMENTED" && (a.comment?.text.includes(toBb(marker)) || a.comment?.text.includes(marker)))?.comment;
       if (mine) {
         if (mine.text === text) return "unchanged";
         await this.http.put(`${this.repoPath}/pull-requests/${pr.id}/comments/${mine.id}`, { text, version: mine.version });
