@@ -45,7 +45,7 @@ describe.each(ENGINE_CASES)('file-breakdown (live, $name engine)', (ec) => {
   it('dry run changes nothing', async () => {
     const r = await file(true);
     expect(r.items.map((i) => i.action)).toEqual(['would-create', 'would-create', 'would-create']);
-    expect(r.page?.action).toBe('would-upsert');
+    expect(r.page?.action).toBe('would-create');
     expect(await jira.epicIssues(epic)).toHaveLength(0);
   });
 

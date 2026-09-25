@@ -32,3 +32,8 @@ worktrees/
 setup-debug/
 .tsbuild/
 .sdlc-demo/
+
+# Per-developer sdlc state (config.json and atlassian.json are shared and committed)
+.sdlc/tickets/
+.sdlc/sync.log
+.sdlc/sync.lock

@@ -10,12 +10,20 @@
  *   sdlc-atl publish-rca KEY [--file docs/rca/KEY.md]          publish a bug's RCA to Confluence + the bug
  *   sdlc-atl escalate KEY --epic EPIC                          promote to Track A
  * Both:
- *   sdlc-atl sync                                              move issues forward, publish verification reports
+ *   sdlc-atl sync [--quiet]                                    move issues forward, publish verification reports
+ *   sdlc-atl page pull PAGE_ID [--out FILE]                    Confluence page -> markdown (e.g. a PRD)
+ *   sdlc-atl page push FILE --space KEY [--title T] [--parent ID]   markdown -> Confluence page (create/update)
+ *   sdlc-atl hooks install|uninstall|status                    git post-commit hook that runs sync automatically
+ *   sdlc-atl init [--engine E] [--epic KEY] [--prd ID] [--space KEY]   write .sdlc/config.json
  *   sdlc-atl whoami
  * Common options: --root DIR (default .), --engine gsd|piv, --dry-run, --json, --env FILE, --space KEY
  */
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { resolve } from 'node:path';
+import { hookInstalled, installHook, selfCommand, uninstallHook, withLock } from './automation.ts';
+import { ConfluenceClient } from './confluence.ts';
 import { connect } from './index.ts';
 import { resolveEngine, readSdlcConfig } from './engines/index.ts';
 import { fileBreakdown, type FilingReport } from './filing.ts';
@@ -35,6 +43,10 @@ const { values: opt, positionals } = parseArgs({
     prd: { type: 'string' },
     space: { type: 'string' },
     file: { type: 'string' },
+    out: { type: 'string' },
+    title: { type: 'string' },
+    parent: { type: 'string' },
+    quiet: { type: 'boolean', default: false },
     'issue-type': { type: 'string' },
     'dry-run': { type: 'boolean', default: false },
     json: { type: 'boolean', default: false },
@@ -97,26 +109,91 @@ try {
     }
 
     case 'sync': {
-      const c = clients();
-      let confluence;
-      try {
-        confluence = c.confluence;
-      } catch {
-        confluence = undefined; // reports are skipped without Confluence; transitions still sync
-      }
-      const state = new StateFile(root);
-      const report = await syncProgress({
-        jira: c.jira,
-        confluence,
-        breakdown: state.data.epic ? await resolveEngine(root, opt.engine).loadBreakdown(root, { issueKeys: issueKeysOf(state) }) : undefined,
-        engineFor: (name) => resolveEngine(root, opt.engine ?? name, { fallback: true }),
-        root,
-        state,
-        transitions: cfg.jira?.transitions,
-        confluenceSpace: opt.space ?? cfg.confluence?.space,
-        dryRun: opt['dry-run'],
+      const result = await withLock(root, async () => {
+        const c = clients();
+        let confluence;
+        try {
+          confluence = c.confluence;
+        } catch {
+          confluence = undefined; // reports are skipped without Confluence; transitions still sync
+        }
+        const state = new StateFile(root);
+        return syncProgress({
+          jira: c.jira,
+          confluence,
+          breakdown: state.data.epic ? await resolveEngine(root, opt.engine).loadBreakdown(root, { issueKeys: issueKeysOf(state) }) : undefined,
+          engineFor: (name) => resolveEngine(root, opt.engine ?? name, { fallback: true }),
+          root,
+          state,
+          transitions: cfg.jira?.transitions,
+          confluenceSpace: opt.space ?? cfg.confluence?.space,
+          dryRun: opt['dry-run'],
+        });
       });
-      out(report, () => formatSync(report, opt['dry-run']!));
+      if (result === 'locked') {
+        if (!opt.quiet) console.log('sync already running (.sdlc/sync.lock); skipped');
+        break;
+      }
+      if (opt.quiet) {
+        // Hook mode: one timestamped line per change, nothing when nothing changed.
+        const changes = [...result.items, ...result.tickets].filter((i) => i.transition.action === 'moved' || ['created', 'updated'].includes(i.report?.action ?? ''));
+        for (const i of changes) console.log(`${new Date().toISOString()} ${i.key} ${i.status}: ${i.transition.action === 'moved' ? `-> ${i.transition.to}` : ''} ${i.report ? `report ${i.report.action}` : ''}`.trim());
+      } else out(result, () => formatSync(result, opt['dry-run']!));
+      break;
+    }
+
+    case 'page': {
+      const [sub, arg] = positionals;
+      const c = clients();
+      if (sub === 'pull') {
+        if (!arg) throw new Error('page pull PAGE_ID [--out FILE]');
+        const page = await c.confluence.getPage(arg);
+        if (!page) throw new Error(`Confluence page ${arg} not found`);
+        const md = `<!-- source: ${c.confluence.pageUrl(page)} (page ${page.id}, v${page.version?.number}) -->\n\n# ${page.title}\n\n${ConfluenceClient.markdown(page)}\n`;
+        if (opt.out) {
+          mkdirSync(dirname(resolve(opt.out)), { recursive: true });
+          writeFileSync(resolve(opt.out), md);
+          console.log(`${page.title} -> ${opt.out}`);
+        } else process.stdout.write(md);
+      } else if (sub === 'push') {
+        if (!arg) throw new Error('page push FILE --space KEY [--title T] [--parent PAGE_ID]');
+        const spaceKey = opt.space ?? cfg.confluence?.space;
+        if (!spaceKey) throw new Error('page push needs --space KEY (or confluence.space in .sdlc/config.json)');
+        let md = readFileSync(resolve(arg), 'utf8').replace(/^﻿/, '').replace(/^<!-- source: [^\n]*-->\n+/, '');
+        const h1 = md.match(/^#\s+(.+)\n+/);
+        const title = opt.title ?? h1?.[1]?.trim() ?? basename(arg, '.md');
+        if (h1 && !opt.title) md = md.slice(h1[0].length); // the H1 becomes the page title
+        const { page, action } = await c.confluence.upsertPage({ spaceKey, title, markdown: md, parentId: opt.parent });
+        out({ id: page.id, url: c.confluence.pageUrl(page), action }, () => `${title}: ${action} ${c.confluence.pageUrl(page)} (page ${page.id})`);
+      } else throw new Error('page pull|push');
+      break;
+    }
+
+    case 'hooks': {
+      const sub = positionals[0] ?? 'status';
+      if (sub === 'install') {
+        // Prefer the stable user install (~/.sdlc/bin) over this copy: a plugin's own path changes on update.
+        const stable = join(homedir(), '.sdlc', 'bin', 'sdlc-atl.mjs');
+        const r = installHook(root, existsSync(stable) ? selfCommand(stable) : selfCommand());
+        console.log(`post-commit hook ${r.action}: ${r.path}\n  commits touching planning artifacts now run \`sync\` in the background (log: .sdlc/sync.log)`);
+      } else if (sub === 'uninstall') console.log(uninstallHook(root) ? 'post-commit hook removed' : 'no sdlc-atl hook installed');
+      else console.log(hookInstalled(root) ? 'post-commit hook installed' : 'no sdlc-atl hook (run: sdlc-atl hooks install)');
+      break;
+    }
+
+    case 'init': {
+      const file = join(root, '.sdlc', 'config.json');
+      const merged = {
+        ...cfg,
+        ...(opt.engine ? { engine: opt.engine } : {}),
+        ...(opt.epic ? { epic: opt.epic.toUpperCase() } : {}),
+        ...(opt.prd ? { prdPageId: opt.prd } : {}),
+        ...(opt.space ? { confluence: { ...cfg.confluence, space: opt.space } } : {}),
+      };
+      if (merged.engine) resolveEngine(root, merged.engine); // validate the name
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, JSON.stringify(merged, null, 2) + '\n');
+      console.log(`${file}:\n${JSON.stringify(merged, null, 2)}`);
       break;
     }
 
@@ -145,7 +222,7 @@ try {
     }
 
     default:
-      console.error('usage: sdlc-atl <breakdown | file-breakdown | import | publish-rca | escalate | sync | whoami> [options]  (see src/cli.ts)');
+      console.error('usage: sdlc-atl <breakdown | file-breakdown | import | publish-rca | escalate | sync | page | hooks | init | whoami> [options]  (see the header of src/cli.ts)');
       process.exit(command ? 1 : 0);
   }
 } catch (e) {

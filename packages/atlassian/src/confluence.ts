@@ -105,6 +105,13 @@ export class ConfluenceClient {
     return { page, action: 'updated' as const };
   }
 
+  /** What `upsertPage` would do, without writing anything (for dry runs). */
+  async upsertPreview(opts: { spaceKey: string; title: string; markdown: string }): Promise<'create' | 'update' | 'unchanged'> {
+    const existing = await this.findPage(opts.spaceKey, opts.title);
+    if (!existing) return 'create';
+    return (await this.getProperty(existing.id, HASH_PROPERTY)) === sourceHash(opts.markdown) ? 'unchanged' : 'update';
+  }
+
   async getProperty(pageId: string, key: string): Promise<unknown> {
     const p = await this.http.get<{ value: unknown }>(`/rest/api/content/${encodeURIComponent(pageId)}/property/${encodeURIComponent(key)}`, undefined, [404]);
     return p?.value;

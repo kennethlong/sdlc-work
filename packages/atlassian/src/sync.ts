@@ -129,7 +129,6 @@ export async function syncProgress(opts: SyncOptions): Promise<SyncReport> {
     if (!confluence) return { action: 'skipped-no-space' };
     const spaceKey = parent?.space?.key ?? opts.confluenceSpace;
     if (!spaceKey) return { action: 'skipped-no-space' };
-    if (dryRun) return { action: 'would-publish' };
 
     const passed = v.status === 'passed';
     const pageTitle = `Verification: ${key} ${title}`;
@@ -143,6 +142,10 @@ export async function syncProgress(opts: SyncOptions): Promise<SyncReport> {
       v.markdown,
     ].join('\n');
 
+    if (dryRun) {
+      const preview = await confluence.upsertPreview({ spaceKey, title: pageTitle, markdown: md });
+      return { action: preview === 'unchanged' ? 'unchanged' : 'would-publish' };
+    }
     const { page, action } = await confluence.upsertPage({ spaceKey, title: pageTitle, markdown: md, parentId: parent?.id });
     const url = confluence.pageUrl(page);
     if (action !== 'unchanged') {

@@ -1,0 +1,13 @@
+{
+  "name": "sdlc",
+  "version": "0.1.0",
+  "description": "AI-native SDLC on Jira + Confluence Data Center: PRD -> ticket breakdown -> GSD or PIV execution -> status and verification reports back to Jira/Confluence; Jira-only track for small work and bugs (RCA).",
+  "author": { "name": "Kenny Long" },
+  "keywords": ["sdlc", "jira", "confluence", "gsd", "spec-driven", "rca"],
+  "mcpServers": {
+    "atlassian": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/mcp-atlassian.mjs"]
+    }
+  }
+}

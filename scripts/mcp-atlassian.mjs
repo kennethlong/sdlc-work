@@ -1,22 +1,22 @@
 #!/usr/bin/env node
 // Launch the mcp-atlassian MCP server (stdio) against Jira/Confluence Data Center using PATs.
-// Settings come from the environment, or else from infra/atlassian-dc/.env (the local stack), via the
-// same rules as @sdlc/atlassian's loadConfig: JIRA_BASE_URL, JIRA_PAT, CONFLUENCE_BASE_URL, CONFLUENCE_PAT.
+// Settings come from the environment, else the nearest infra/atlassian-dc/.env (local stack), else
+// ~/.sdlc/atlassian.env, via @sdlc/atlassian's loadConfig: JIRA_BASE_URL, JIRA_PAT, CONFLUENCE_BASE_URL, CONFLUENCE_PAT.
+// Defaults to mcp-atlassian's "default" toolset (~35 tools instead of ~98); set TOOLSETS=all to widen.
 // Extra args are passed through (e.g. --read-only).
 import { spawn } from 'node:child_process';
-import { dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { loadConfig } from '../packages/atlassian/src/config.ts';
 
 const VERSION = process.env.MCP_ATLASSIAN_VERSION ?? '0.23.1';
 
-const cfg = loadConfig({ cwd: dirname(fileURLToPath(import.meta.url)) });
+// MCP clients start servers in the project directory; resolve config from there.
+const cfg = loadConfig({ cwd: process.cwd() });
 if (!cfg.jira && !cfg.confluence) {
-  console.error('mcp-atlassian: no Jira/Confluence configured (JIRA_BASE_URL/JIRA_PAT, CONFLUENCE_BASE_URL/CONFLUENCE_PAT).');
+  console.error('mcp-atlassian: no Jira/Confluence configured (JIRA_BASE_URL/JIRA_PAT, CONFLUENCE_BASE_URL/CONFLUENCE_PAT, or ~/.sdlc/atlassian.env).');
   process.exit(1);
 }
 
-const env = { ...process.env };
+const env = { TOOLSETS: 'default', ...process.env };
 if (cfg.jira) Object.assign(env, { JIRA_URL: cfg.jira.baseUrl, JIRA_PERSONAL_TOKEN: cfg.jira.token });
 if (cfg.confluence) Object.assign(env, { CONFLUENCE_URL: cfg.confluence.baseUrl, CONFLUENCE_PERSONAL_TOKEN: cfg.confluence.token });
 

@@ -1,0 +1,12 @@
+{
+  "name": "sdlc-work",
+  "description": "AI-native SDLC toolset for teams on Jira + Confluence Data Center",
+  "owner": { "name": "Kenny Long" },
+  "plugins": [
+    {
+      "name": "sdlc",
+      "source": "./plugins/sdlc",
+      "description": "PRD -> tickets -> GSD/PIV execution -> progress back to Jira/Confluence; Track B for small work and bugs"
+    }
+  ]
+}

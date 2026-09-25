@@ -93,6 +93,9 @@ Mapping state lives in `.sdlc/atlassian.json`, with labels as a fallback, so eve
 | Primed ticket | `/prime <key>` holds it in the session only | Persisted brief `.sdlc/tickets/<KEY>.md` | A fresh session, another agent, or GSD's planner can read it; survives context resets |
 | RCA doc | `docs/rca/issue-<n>.md`, stays in the repo | `docs/rca/<KEY>.md`, published to Confluence + the bug | Keyed by the Jira bug; the RCA is visible where the team works |
 | Learning loop | Stated principle ("every bug → rule + regression test") | `publish-rca` warns when the RCA names no regression test or prevention rule | Makes the loop checkable instead of aspirational |
+| Distribution | Copy `.claude/` into each repo | Plugin (marketplace) + `install.ps1` for other agents; skills namespaced `/sdlc:*` | Versioned, one-command install and updates; portable across agents |
+| Automation | Manual skill invocation | git post-commit hook runs `sync` | Status follows the work without anyone remembering; agent-agnostic |
+| Execution report location | `.claude/execution-reports/[feature].md` | `.claude/execution-reports/<ticket>-<slug>.md` | Same folder; the ticket prefix is what links the verdict to Jira |
 | Small work | Implicit: any ticket can enter the PIV loop | Explicit Track B with escalation to Track A | Makes "does this need a PRD?" a deliberate decision instead of drift |
 | Ticket slicing | Agent slices the PRD directly into tickets | `gsd` engine: slices via GSD ROADMAP (`granularity: fine`), then files phases as tickets. `piv` engine: as the reference | One source for the plan: tickets mirror GSD phases, so status can sync back mechanically |
 | Engine choice | Its own skills only | `gsd` or `piv` | Teams can keep the reference's lighter loop or opt into GSD; the Jira/Confluence side is shared |
@@ -116,11 +119,17 @@ Flows may become configurable later, once we've seen how the team uses them.
    agents write), plans and execution reports. Hardened on a real 36-phase GSD roadmap: canonical phase ids
    (`04.3` = `4.3`), conservative parsing of free-text "Depends on", non-fatal cycles, BOM-tolerant reads,
    parallel `gsd-tools` calls.
-5. ✅ **Track B** (2026-09-25; 81 tests total): `sdlc-atl import KEY` (ticket brief `.sdlc/tickets/KEY.md` with
+5. ✅ **Track B** (2026-09-25; 76 tests total): `sdlc-atl import KEY` (ticket brief `.sdlc/tickets/KEY.md` with
    acceptance criteria, recent comments and engine-specific next steps), `sync` covers imported tickets (GSD quick
    tasks / piv plans + execution reports named after the key), `publish-rca KEY` (RCA doc → Confluence page under
    "Root Cause Analyses" + comment on the bug; warns without a regression test / prevention rule), `escalate KEY --epic`.
-6. **Skills:** portable SKILL.md wrappers (`/spec`, `/jira-sync`, `/rca`) and GSD hook points.
+6. ✅ **Skills + automation** (2026-09-25; 78 tests total): Claude Code plugin `plugins/sdlc` (marketplace at the repo
+   root) with 12 skills: `setup`, `prd`, `spec`, `ticket`, `rca`, `fix`, `sync`, and the reference-style loop for the
+   piv engine (`prime`, `plan`, `execute`, `validate`, `report`), rewritten, not copied. A bundled self-contained CLI
+   and MCP launcher (esbuild) make the installed plugin work without `node_modules`. `scripts/install.ps1` serves
+   other agents (`~/.agents/skills`). A git post-commit hook (`sdlc-atl hooks install`) runs `sync` in the background
+   whenever a commit touches planning artifacts, for every agent and for humans. Verified with a headless Claude
+   Code session loading the plugin.
 7. **Cloud adapter.**
 
 ## DC notes
