@@ -31,3 +31,4 @@ logs/
 worktrees/
 setup-debug/
 .tsbuild/
+.sdlc-demo/

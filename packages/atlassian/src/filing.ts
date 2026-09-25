@@ -87,7 +87,8 @@ export async function fileBreakdown(opts: FilingOptions): Promise<FilingReport> 
   async function resolveOrCreate(item: WorkItem, wave: number): Promise<{ key?: string; action: ItemAction }> {
     const label = itemLabel(item.id);
     const mapped = state.data.items[item.id]?.issueKey;
-    if (mapped && (await jira.getIssue(mapped, 'summary'))) return { key: mapped, action: 'existing' };
+    // Trust the mapping only if the issue still carries our label: keys get reused (e.g. a rebuilt instance).
+    if (mapped && (await jira.getIssue(mapped, 'labels'))?.fields.labels?.includes(label)) return { key: mapped, action: 'existing' };
 
     const match =
       children.find((c) => c.fields.labels?.includes(label)) ?? children.find((c) => norm(c.fields.summary) === norm(item.title));

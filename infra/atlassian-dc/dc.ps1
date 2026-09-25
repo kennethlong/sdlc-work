@@ -12,13 +12,14 @@
   ./dc.ps1 logs jira
   ./dc.ps1 down                     # stop, keep data
   ./dc.ps1 reset                    # stop and DELETE all data volumes
+  ./dc.ps1 rebuild                  # reset + up, no prompt: a fresh instance (new 3-hour test license window)
   ./dc.ps1 license                  # fetch Atlassian's 3-hour test (timebomb) keys into .env
   ./dc.ps1 license jira -Copy       # ...and put the Jira key on the clipboard for the setup wizard
-  ./dc.ps1 license all -Apply       # ...and install fresh keys into already-set-up instances
+  ./dc.ps1 license all -Apply       # install the keys from .env into running instances (e.g. developer license)
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('init', 'up', 'setup', 'creds', 'down', 'status', 'logs', 'reset', 'license')]
+    [ValidateSet('init', 'up', 'setup', 'creds', 'down', 'status', 'logs', 'reset', 'rebuild', 'license')]
     [string]$Command = 'status',
 
     # logs: service name. license: jira | confluence | all.
@@ -32,6 +33,9 @@ param(
 
     # license: install the key into the running, already-set-up instance(s).
     [switch]$Apply,
+
+    # license -Apply: refetch the test keys instead of using the ones in the env file.
+    [switch]$Fetch,
 
     # up: start containers without running the unattended setup.
     [switch]$NoSetup,
@@ -144,7 +148,15 @@ function Install-JiraLicense([string]$Key) {
     $headers = (Get-JiraAuthHeaders) + @{ 'X-Atlassian-Token' = 'no-check' }
     # UPM wants its vendor media type and a `licenseKey` field (plain JSON -> 415, `rawLicense` -> 500).
     $body = @{ licenseKey = $Key } | ConvertTo-Json
-    $r = Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -ContentType 'application/vnd.atl.plugins+json' -Body $body
+    try {
+        $r = Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -ContentType 'application/vnd.atl.plugins+json' -Body $body
+    } catch {
+        if ("$($_.ErrorDetails.Message)" -match 'expired') {
+            # Timebomb keys count 3 hours from the first time *this instance* saw them; re-applying doesn't reset it.
+            throw "Jira rejected the key as expired: a 3-hour test license can't be renewed on the same instance. Run ./dc.ps1 rebuild (fresh instance, wipes data) or install the developer license."
+        }
+        throw
+    }
     Write-Host "  jira: license installed (expires $($r.license.expiryDateString); valid=$($r.license.valid))"
 }
 
@@ -244,24 +256,42 @@ switch ($Command) {
         if ($answer -ne 'reset') { Write-Host 'Aborted.'; return }
         Invoke-Compose down -v
     }
+    'rebuild' {
+        # Test licenses expire 3 hours after an instance first sees them and can't be renewed in place, so the
+        # way to keep developing on them is a fresh instance. Keeps admin passwords and license keys in the env
+        # file (setup reuses them); drops the PATs, which belong to the old instance.
+        Invoke-Compose down -v
+        if (Test-Path $EnvFile) {
+            (Get-Content $EnvFile) | Where-Object { $_ -notmatch '^(JIRA|CONFLUENCE)_PAT=' } | Set-Content $EnvFile -Encoding ascii
+        }
+        & $PSCommandPath up -EnvFile $EnvFile -Project $Project -TimeoutMinutes $TimeoutMinutes
+    }
     'license' {
         if (-not (Test-Path $EnvFile)) { throw 'No .env yet. Run ./dc.ps1 init first.' }
         $targets = if (-not $Service -or $Service -eq 'all') { @($LicenseProducts.Keys) } else { @($Service) }
         foreach ($t in $targets) { if (-not $LicenseProducts.Contains($t)) { throw "Unknown product '$t'. Use jira, confluence or all." } }
         if ($Copy -and $targets.Count -ne 1) { throw '-Copy needs a single product: ./dc.ps1 license jira -Copy' }
 
-        Write-Host "Fetching test licenses from $TimebombUrl"
-        $licenses = Get-TimebombLicenses
+        # Without -Apply: fetch the test keys into the env file. With -Apply: install the key already in the env
+        # file (e.g. a pasted developer license), fetching a test key only if none is set or -Fetch is given.
+        $licenses = $null
         foreach ($t in $targets) {
             $p = $LicenseProducts[$t]
-            $lic = $licenses[$p.Heading]
-            if (-not $lic) { throw "No '$($p.Heading)' key on the timebomb page (found: $($licenses.Keys -join ', '))." }
-            Set-EnvValue $p.EnvVar $lic.Key
-            Write-Host ("  {0,-11} {1} (valid {2} from when applied) -> .env {3}" -f $t, $lic.Title, $lic.Ttl, $p.EnvVar)
-            if ($Copy) { Set-Clipboard -Value $lic.Key; Write-Host "  $t key copied to clipboard." }
+            $key = Get-EnvValue $p.EnvVar ''
+            if (-not $Apply -or $Fetch -or -not $key) {
+                if (-not $licenses) { Write-Host "Fetching test licenses from $TimebombUrl"; $licenses = Get-TimebombLicenses }
+                $lic = $licenses[$p.Heading]
+                if (-not $lic) { throw "No '$($p.Heading)' key on the timebomb page (found: $($licenses.Keys -join ', '))." }
+                $key = $lic.Key
+                Set-EnvValue $p.EnvVar $key
+                Write-Host ("  {0,-11} {1} (3 hours per instance) -> {2} {3}" -f $t, $lic.Title, $EnvFile, $p.EnvVar)
+            } else {
+                Write-Host ("  {0,-11} using {1} from {2}" -f $t, $p.EnvVar, $EnvFile)
+            }
+            if ($Copy) { Set-Clipboard -Value $key; Write-Host "  $t key copied to clipboard." }
             if ($Apply) {
                 if ((Get-AppState $apps[$t]) -ne 'RUNNING') { throw "$t is not RUNNING (finish its setup wizard first, then use -Apply)." }
-                if ($t -eq 'jira') { Install-JiraLicense $lic.Key } else { Install-ConfluenceLicense $lic.Key }
+                if ($t -eq 'jira') { Install-JiraLicense $key } else { Install-ConfluenceLicense $key }
             }
         }
     }

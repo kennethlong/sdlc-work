@@ -1,10 +1,21 @@
 import type { Page } from 'playwright';
-import { runWizard, submit, type Step } from './wizard.ts';
+import { fingerprint, runWizard, submit, type Step } from './wizard.ts';
 import { rest, type Admin, type Auth } from './rest.ts';
 
 export async function jiraWizard(page: Page, baseUrl: string, license: string, admin: Admin, debugDir: string) {
   const next = () => page.getByRole('button', { name: 'Next' }).click();
   const steps: Step[] = [
+    {
+      // /status can report FIRST_RUN while the web UI is still on its startup page.
+      name: 'waiting for Jira to finish starting',
+      match: /startup\.jsp|is starting up/i,
+      run: async (p) => {
+        while (/startup\.jsp|is starting up/i.test((await fingerprint(p)) + (await p.title()))) {
+          await p.waitForTimeout(5000);
+          await p.goto(baseUrl);
+        }
+      },
+    },
     {
       name: 'application properties',
       match: /Set up application properties/i,

@@ -48,10 +48,22 @@ Put the company **developer license** keys in `.env` before the first `up` to us
 ./dc.ps1 up -NoSetup            # containers only
 ```
 
-## When a 3-hour test license expires
+## Licenses
+
+**Test (timebomb) licenses last 3 hours per instance and cannot be renewed in place.** The 3 hours count from
+when the instance first sees the key, so re-applying it is rejected ("This license has expired"). An expired
+instance goes read-only. To keep going on test keys, get a fresh instance (about 7 minutes, **wipes data**):
 
 ```powershell
-./dc.ps1 license all -Apply     # fetch fresh test keys and install them; data is kept
+./dc.ps1 rebuild                # down -v + up; keeps admin passwords and keys in .env, makes new PATs
+```
+
+Our tests create and delete their own data, so rebuilding is cheap for development. For data that should last,
+use the **developer license**: put the keys in `.env` (`JIRA_LICENSE_KEY`, `CONFLUENCE_LICENSE_KEY`), then either
+`./dc.ps1 rebuild` (fresh instance) or install them into the running one, keeping its data:
+
+```powershell
+./dc.ps1 license all -Apply     # installs the keys from .env; fetches a test key only when none is set (-Fetch forces it)
 ```
 
 - **Jira:** installed via REST (`/rest/plugins/applications/1.0/installed/jira-software/license`), no restart.
@@ -59,7 +71,7 @@ Put the company **developer license** keys in `.env` before the first `up` to us
   (1–2 minutes). Don't use `ATL_FORCE_CFG_UPDATE` for this: it regenerates the whole file from the image
   template, resetting `setupStep`, which sends a configured instance back into the setup wizard.
 
-Other license helpers: `./dc.ps1 license` (fetch keys into `.env`), `./dc.ps1 license jira -Copy` (clipboard).
+Other license helpers: `./dc.ps1 license` (fetch test keys into `.env`), `./dc.ps1 license jira -Copy` (clipboard).
 
 ## How setup works (`setup/`)
 
