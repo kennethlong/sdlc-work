@@ -96,7 +96,11 @@ Flows may become configurable later, once we've seen how the team uses them.
 1. ✅ **Client + agent tools** (2026-09-24; 9 unit + 9 live tests).
 2. ✅ **Track A ticket filing (gsd engine)** (2026-09-24; 34 tests total): `sdlc-atl file-breakdown` (items → stories under the epic, dependency
    links, idempotent, `--dry-run`) and publishing the breakdown page under the PRD.
-3. **Report back:** `sync` (status transitions, verification pages, links) via `.planning/atlassian.json`.
+3. ✅ **Report back** (2026-09-24; 40 tests total): `sdlc-atl sync [--dry-run]`. Status → transition map
+   (default: planned/executing/needs_attention → *In Progress*, complete → *Done*; override in `.sdlc/config.json`
+   `jira.transitions`), forward-only (never out of Done), verification report → `Verification: <KEY> <title>` page
+   under the breakdown page, remote link + one comment per new/changed report. Triggered manually for now; slice 6
+   wires it into GSD/skills.
 4. **`piv` engine adapter:** read/write the reference's `docs/specs/` and plan artifacts.
 5. **Track B:** `import-story` / `import-bug` into GSD, and an RCA skill writing to Jira.
 6. **Skills:** portable SKILL.md wrappers (`/spec`, `/jira-sync`, `/rca`) and GSD hook points.

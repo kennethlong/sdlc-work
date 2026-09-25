@@ -5,6 +5,7 @@
  *   sdlc-atl whoami
  *   sdlc-atl breakdown [--root .] [--engine gsd]                         show the work breakdown that would be filed
  *   sdlc-atl file-breakdown --epic KEY [--prd PAGE_ID] [--dry-run] ...   file it as stories + publish under the PRD
+ *   sdlc-atl sync [--dry-run]                                            move stories forward, publish verification reports
  */
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
@@ -12,6 +13,7 @@ import { connect } from './index.ts';
 import { resolveEngine, readSdlcConfig } from './engines/index.ts';
 import { fileBreakdown, type FilingReport } from './filing.ts';
 import { StateFile } from './state.ts';
+import { syncProgress, type SyncReport } from './sync.ts';
 import { waves } from './work.ts';
 
 const [command, ...rest] = process.argv.slice(2);
@@ -64,14 +66,35 @@ try {
         epicKey,
         prdPageId,
         state: new StateFile(root),
-        issueType: opt['issue-type'],
+        issueType: opt['issue-type'] ?? cfg.jira?.issueType,
         dryRun: opt['dry-run'],
       });
       out(report, () => formatReport(report, opt['dry-run']!));
       break;
     }
+    case 'sync': {
+      const cfg = readSdlcConfig(root);
+      const c = connect({ envFile: opt.env });
+      let confluence;
+      try {
+        confluence = c.confluence;
+      } catch {
+        confluence = undefined; // reports are skipped without Confluence; transitions still sync
+      }
+      const report = await syncProgress({
+        jira: c.jira,
+        confluence,
+        breakdown: await resolveEngine(root, opt.engine ?? cfg.engine).loadBreakdown(root),
+        state: new StateFile(root),
+        transitions: cfg.jira?.transitions,
+        confluenceSpace: cfg.confluence?.space,
+        dryRun: opt['dry-run'],
+      });
+      out(report, () => formatSync(report, opt['dry-run']!));
+      break;
+    }
     default:
-      console.error('usage: sdlc-atl <whoami | breakdown | file-breakdown> [options]   (see src/cli.ts header)');
+      console.error('usage: sdlc-atl <whoami | breakdown | file-breakdown | sync> [options]   (see src/cli.ts header)');
       process.exit(command ? 1 : 0);
   }
 } catch (e) {
@@ -85,5 +108,16 @@ function formatReport(r: FilingReport, dryRun: boolean): string {
   const newLinks = r.links.filter((l) => l.action !== 'existing');
   if (newLinks.length) lines.push(`  links: ${newLinks.map((l) => `${l.from} blocks ${l.to} (${l.action})`).join(', ')}`);
   if (r.page) lines.push(`  page: ${r.page.title} (${r.page.action})${r.page.url ? ` ${r.page.url}` : ''}`);
+  return lines.join('\n');
+}
+
+function formatSync(r: SyncReport, dryRun: boolean): string {
+  const lines = [`${dryRun ? '[dry run] ' : ''}Progress:`];
+  for (const i of r.items) {
+    const move = i.transition.action === 'none' ? '' : ` -> ${i.transition.to} (${i.transition.action})`;
+    const rep = i.report ? `  report: ${i.report.action}${i.report.url ? ' ' + i.report.url : ''}` : '';
+    lines.push(`  ${i.key!.padEnd(10)} ${i.status.padEnd(15)} ${i.jiraStatus ?? '?'}${move}${rep}`);
+  }
+  if (r.unfiled.length) lines.push(`  not filed yet: ${r.unfiled.join(', ')} (run file-breakdown)`);
   return lines.join('\n');
 }

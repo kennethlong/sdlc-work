@@ -1,6 +1,21 @@
 /** Engine-neutral work breakdown: what gets filed as tickets, whatever engine planned it. */
 
-export type WorkStatus = 'not_started' | 'in_progress' | 'complete';
+/**
+ * Lifecycle of a work item, in order. `needs_attention` = verified with gaps or needing a human check.
+ * `complete` = verified (passed), or marked done in the plan.
+ */
+export type WorkStatus = 'not_started' | 'discussed' | 'planned' | 'executing' | 'needs_attention' | 'complete';
+
+export type Verification = {
+  /** Engine's verdict, e.g. GSD: passed | gaps_found | human_needed. */
+  status: string;
+  score?: string;
+  verifiedAt?: string;
+  /** Report body (markdown, front matter stripped). */
+  markdown: string;
+  /** Repo-relative path of the report. */
+  path: string;
+};
 
 export type WorkItem = {
   /** Engine-local id, stable across re-runs (GSD: phase number, e.g. "2" or "2.1"). */
@@ -14,6 +29,8 @@ export type WorkItem = {
   status: WorkStatus;
   /** Where the item lives in the repo, for the ticket's "Source" line (e.g. ".planning/ROADMAP.md#phase-2"). */
   source: string;
+  /** Latest verification report, if the item has been verified (pass or fail). */
+  verification?: Verification;
 };
 
 export type Breakdown = {

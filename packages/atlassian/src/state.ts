@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 export type BridgeState = {
   epic?: string;
   breakdownPageId?: string;
-  items: Record<string, { issueKey: string }>;
+  items: Record<string, { issueKey: string; verificationPageId?: string }>;
 };
 
 export class StateFile {

@@ -56,11 +56,18 @@ describe.skipIf(!hasGsd)('GsdEngine (needs GSD Core installed)', () => {
     expect(b.overview).toMatch(/export and schedule reports/);
     expect(b.items.map((i) => [i.id, i.title, i.dependsOn, i.status])).toEqual([
       ['1', 'CSV export endpoint', [], 'complete'],
-      ['2', 'Export UI', ['1'], 'not_started'],
+      ['2', 'Export UI', ['1'], 'planned'],
       ['3', 'Scheduled exports', ['1'], 'not_started'],
     ]);
     expect(b.items[0]!.acceptanceCriteria).toHaveLength(3);
     expect(b.items[0]!.requirements).toEqual(['EXP-01', 'EXP-02']);
+    expect(b.items[0]!.verification).toMatchObject({
+      status: 'passed',
+      score: '3/3 must-haves verified',
+      path: '.planning/phases/01-csv-export-endpoint/01-VERIFICATION.md',
+    });
+    expect(b.items[0]!.verification!.markdown).toMatch(/^# Phase 1: CSV export endpoint Verification Report/);
+    expect(b.items[1]!.verification).toBeUndefined();
   });
 });
 

@@ -24,7 +24,14 @@ export function resolveEngine(root: string, name?: string): Engine {
   throw new Error(`No planning artifacts found in ${root} (expected .planning/ROADMAP.md for GSD). Pass --engine.`);
 }
 
-export type SdlcConfig = { engine?: string; epic?: string; prdPageId?: string };
+/** `.sdlc/config.json`. */
+export type SdlcConfig = {
+  engine?: string;
+  epic?: string;
+  prdPageId?: string;
+  jira?: { issueType?: string; transitions?: Partial<Record<import('../work.ts').WorkStatus, string>> };
+  confluence?: { space?: string };
+};
 
 export function readSdlcConfig(root: string): SdlcConfig {
   const file = join(root, '.sdlc', 'config.json');

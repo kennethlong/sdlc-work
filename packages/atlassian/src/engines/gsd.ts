@@ -1,14 +1,15 @@
 import { execFile } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import type { Breakdown, Engine, WorkItem, WorkStatus } from '../work.ts';
+import type { Breakdown, Engine, Verification, WorkItem, WorkStatus } from '../work.ts';
 
 const run = promisify(execFile);
 
 type AnalyzedPhase = { number: string; name: string; goal: string | null; depends_on: string | null; roadmap_complete: boolean; disk_status: string };
 type PhaseDetail = { found: boolean; success_criteria?: string[]; section?: string };
+type FoundPhase = { found: boolean; directory: string | null };
 
 /**
  * GSD Core adapter. Reads ROADMAP phases through `gsd-tools` (GSD's own parser) instead of parsing markdown here,
@@ -32,6 +33,11 @@ export class GsdEngine implements Engine {
     const items: WorkItem[] = [];
     for (const p of analysis.phases) {
       const detail = await gsd<PhaseDetail>(tools, root, ['roadmap', 'get-phase', p.number]);
+      let verification: Verification | undefined;
+      if (p.disk_status !== 'no_directory') {
+        const dir = (await gsd<FoundPhase>(tools, root, ['find-phase', p.number])).directory;
+        if (dir) verification = readVerification(root, dir);
+      }
       items.push({
         id: p.number,
         title: p.name,
@@ -39,8 +45,9 @@ export class GsdEngine implements Engine {
         acceptanceCriteria: detail.success_criteria ?? [],
         requirements: parseRequirements(detail.section ?? ''),
         dependsOn: parseDependsOn(p.depends_on),
-        status: statusOf(p),
+        status: statusOf(p, verification),
         source: `.planning/ROADMAP.md (Phase ${p.number})`,
+        verification,
       });
     }
     const roadmap = readFileSync(join(root, '.planning', 'ROADMAP.md'), 'utf8');
@@ -69,10 +76,50 @@ export function parseRequirements(section: string): string[] {
     .filter((s) => /^[A-Z][A-Z0-9]*-\d+/.test(s));
 }
 
-function statusOf(p: AnalyzedPhase): WorkStatus {
-  if (p.roadmap_complete) return 'complete';
-  if (p.disk_status && !['no_directory', 'empty'].includes(p.disk_status)) return 'in_progress';
-  return 'not_started';
+/**
+ * GSD disk_status (derived by gsd-tools from the phase dir): empty | discussed | researched | planned | partial
+ * (some plans executed) | complete (passing VERIFICATION). A non-passing verification report means the phase
+ * was executed and checked but needs attention.
+ */
+function statusOf(p: AnalyzedPhase, v?: Verification): WorkStatus {
+  if (p.disk_status === 'complete' || p.roadmap_complete) return 'complete';
+  if (v && v.status !== 'passed') return 'needs_attention';
+  switch (p.disk_status) {
+    case 'partial':
+      return 'executing';
+    case 'planned':
+      return 'planned';
+    case 'discussed':
+    case 'researched':
+      return 'discussed';
+    default:
+      return 'not_started';
+  }
+}
+
+/** Latest `*-VERIFICATION.md` in a phase dir, with its front matter parsed. */
+export function readVerification(root: string, phaseDir: string): Verification | undefined {
+  const abs = join(root, phaseDir);
+  if (!existsSync(abs)) return undefined;
+  const file = readdirSync(abs)
+    .filter((f) => /(^|-)VERIFICATION\.md$/.test(f))
+    .sort()
+    .at(-1);
+  if (!file) return undefined;
+  const text = readFileSync(join(abs, file), 'utf8').replace(/\r\n/g, '\n');
+  const fm = text.match(/^---\n([\s\S]*?)\n---\n?/);
+  const meta: Record<string, string> = {};
+  for (const line of fm?.[1]?.split('\n') ?? []) {
+    const m = line.match(/^([A-Za-z_]+):\s*(.*?)\s*$/);
+    if (m && m[2]) meta[m[1]!] = m[2].replace(/^["']|["']$/g, '');
+  }
+  return {
+    status: meta.status ?? 'unknown',
+    score: meta.score,
+    verifiedAt: meta.verified,
+    markdown: text.slice(fm?.[0].length ?? 0).trim(),
+    path: `${phaseDir}/${file}`.split('\\').join('/'),
+  };
 }
 
 async function gsd<T>(tools: string, cwd: string, args: string[]): Promise<T> {
