@@ -20,7 +20,8 @@ function ghToken(): string {
 
 describe.skipIf(!testRepo)('PR + review (live, GitHub)', () => {
   const run = `t${Date.now().toString(36)}`;
-  const base = `base-${run}`;
+  // A persistent base: GitHub makes the first pushed branch the default and refuses to delete it.
+  const base = 'main';
   let root: string;
   let branch = '';
   let key = '';
@@ -49,8 +50,14 @@ describe.skipIf(!testRepo)('PR + review (live, GitHub)', () => {
     git('config', 'user.email', 't@e.x');
     git('config', 'user.name', 't');
     git('remote', 'add', 'origin', `https://github.com/${testRepo}.git`);
-    commit('README.md', 'base');
-    git('push', '-q', '-u', 'origin', base);
+    if (git('ls-remote', '--heads', 'origin', base).trim()) {
+      git('fetch', '-q', 'origin', base);
+      git('checkout', '-q', '-B', base, `origin/${base}`);
+      git('branch', '-q', `--set-upstream-to=origin/${base}`);
+    } else {
+      commit('README.md', 'base');
+      git('push', '-q', '-u', 'origin', base);
+    }
     git('checkout', '-qb', branch);
     commit('export.ts', `${key} add export`);
     git('push', '-q', '-u', 'origin', branch);
@@ -58,12 +65,10 @@ describe.skipIf(!testRepo)('PR + review (live, GitHub)', () => {
   });
 
   afterAll(async () => {
-    for (const b of [branch, base]) {
-      try {
-        git('push', '-q', 'origin', '--delete', b); // also closes the PR if it wasn't merged
-      } catch {
-        /* already gone */
-      }
+    try {
+      git('push', '-q', 'origin', '--delete', branch); // also closes the PR if it wasn't merged
+    } catch {
+      /* already gone */
     }
     if (jira && key) await jira.deleteIssue(key);
     rmSync(root, { recursive: true, force: true });
