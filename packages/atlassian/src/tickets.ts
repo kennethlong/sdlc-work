@@ -20,13 +20,12 @@ const BUG_TYPES = /^(bug|defect|incident|problem)$/i;
 
 export async function importTicket(opts: { jira: JiraClient; root: string; key: string; engine: Engine; state: StateFile }): Promise<ImportResult> {
   const { jira, root, key, engine, state } = opts;
-  const epicField = await jira.fieldId('Epic Link').catch(() => undefined);
-  const issue = await jira.getIssue(key, ['summary', 'issuetype', 'status', 'description', 'labels', 'priority', 'comment', epicField].filter(Boolean).join(','));
+  const issue = await jira.getIssue(key, 'summary,issuetype,status,description,labels,priority,comment');
   if (!issue) throw new Error(`Issue ${key} not found`);
   const f = issue.fields;
   const type = f.issuetype?.name ?? 'Issue';
   const isBug = BUG_TYPES.test(type);
-  const epic = epicField ? (f[epicField] as string | null) ?? undefined : undefined;
+  const epic = await jira.epicOf(issue.key);
   const description = JiraClient.descriptionMarkdown(issue);
   const criteria = acceptanceCriteria(description);
   const comments = ((f.comment?.comments ?? []) as { author: { displayName?: string; name: string }; created: string; body: string }[]).slice(-5);
@@ -163,7 +162,7 @@ export async function escalateTicket(opts: { jira: JiraClient; key: string; epic
   const { jira, key, epic, state } = opts;
   const target = await jira.getIssue(epic, 'issuetype,summary');
   if (target?.fields.issuetype?.name.toLowerCase() !== 'epic') throw new Error(`${epic} is not an Epic`);
-  await jira.updateIssue(key, { fields: { [await jira.fieldId('Epic Link')]: epic } });
+  await jira.setEpic(key, epic);
   await jira.addComment(key, `Escalated to Track A: bigger than one ticket. Now part of ${epic} (${target.fields.summary}); needs a PRD and a ticket breakdown.`);
   state.data.tickets ??= {};
   state.data.tickets[key] = { ...state.data.tickets[key], escalatedTo: epic };

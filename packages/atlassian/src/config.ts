@@ -2,14 +2,22 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
-export type ProductConfig = { baseUrl: string; token: string };
+/** Data Center (self-hosted, PAT auth) or Cloud (*.atlassian.net, email + API token). */
+export type Flavor = 'dc' | 'cloud';
+export type Auth = { type: 'bearer'; token: string } | { type: 'basic'; user: string; token: string };
+export type ProductConfig = { baseUrl: string; flavor: Flavor; auth: Auth };
 export type AtlassianConfig = { jira?: ProductConfig; confluence?: ProductConfig };
 
 /**
  * Resolve connection settings. Precedence: process env, then an env file. The env file is
  * `SDLC_ATLASSIAN_ENV` if set, else the nearest `infra/atlassian-dc/.env` walking up from `cwd` (the local DC
  * stack), else the per-user `~/.sdlc/atlassian.env` (for real instances, e.g. at work).
- * Variables: JIRA_BASE_URL, JIRA_PAT, CONFLUENCE_BASE_URL, CONFLUENCE_PAT.
+ *
+ * Per product (JIRA_* / CONFLUENCE_*):
+ *   <P>_BASE_URL                         required (Confluence Cloud: https://<site>.atlassian.net/wiki)
+ *   <P>_PAT                              Data Center personal access token (Bearer)
+ *   <P>_EMAIL + <P>_API_TOKEN            Cloud (Basic); ATLASSIAN_EMAIL / ATLASSIAN_API_TOKEN cover both products
+ *   <P>_FLAVOR = dc | cloud              optional; default: cloud for *.atlassian.net / *.jira.com, else dc
  */
 export function loadConfig(opts: { envFile?: string; cwd?: string } = {}): AtlassianConfig {
   const userFile = join(homedir(), '.sdlc', 'atlassian.env');
@@ -18,12 +26,35 @@ export function loadConfig(opts: { envFile?: string; cwd?: string } = {}): Atlas
   const fromFile = file && existsSync(file) ? parseEnv(readFileSync(file, 'utf8')) : {};
   const get = (k: string) => process.env[k] || fromFile[k] || '';
 
-  const product = (prefix: 'JIRA' | 'CONFLUENCE'): ProductConfig | undefined => {
-    const baseUrl = get(`${prefix}_BASE_URL`);
-    const token = get(`${prefix}_PAT`);
-    return baseUrl && token ? { baseUrl, token } : undefined;
+  const product = (p: 'JIRA' | 'CONFLUENCE'): ProductConfig | undefined => {
+    const baseUrl = get(`${p}_BASE_URL`).replace(/\/+$/, '');
+    if (!baseUrl) return undefined;
+    const flavorVar = get(`${p}_FLAVOR`).toLowerCase();
+    const flavor: Flavor = flavorVar === 'cloud' || flavorVar === 'dc' ? flavorVar : detectFlavor(baseUrl);
+    const pat = get(`${p}_PAT`);
+    const user = get(`${p}_EMAIL`) || get('ATLASSIAN_EMAIL');
+    const apiToken = get(`${p}_API_TOKEN`) || get('ATLASSIAN_API_TOKEN');
+    let auth: Auth | undefined;
+    // Cloud has no PATs; DC PATs are preferred over basic auth (Confluence DC disables REST basic auth).
+    if (flavor === 'dc' && pat) auth = { type: 'bearer', token: pat };
+    else if (user && apiToken) auth = { type: 'basic', user, token: apiToken };
+    else if (pat) auth = { type: 'bearer', token: pat };
+    return auth ? { baseUrl, flavor, auth } : undefined;
   };
   return { jira: product('JIRA'), confluence: product('CONFLUENCE') };
+}
+
+export function detectFlavor(baseUrl: string): Flavor {
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase();
+    return host.endsWith('.atlassian.net') || host.endsWith('.jira.com') ? 'cloud' : 'dc';
+  } catch {
+    return 'dc';
+  }
+}
+
+export function authHeader(auth: Auth): string {
+  return auth.type === 'bearer' ? `Bearer ${auth.token}` : `Basic ${Buffer.from(`${auth.user}:${auth.token}`).toString('base64')}`;
 }
 
 export function parseEnv(text: string): Record<string, string> {

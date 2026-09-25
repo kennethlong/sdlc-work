@@ -1,3 +1,5 @@
+import { authHeader, type Auth } from './config.ts';
+
 /** Error from an Atlassian REST call, with the server's messages flattened into `message`. */
 export class AtlassianError extends Error {
   readonly status: number;
@@ -35,15 +37,15 @@ export type RequestOptions = {
   contentType?: string;
 };
 
-/** Minimal JSON REST client for a DC product: PAT bearer auth, XSRF bypass, retry on 429/503. */
+/** Minimal JSON REST client: Bearer (DC PAT) or Basic (Cloud email + API token), XSRF bypass, retry on 429/503. */
 export class HttpClient {
   readonly baseUrl: string;
-  private readonly token: string;
+  private readonly authorization: string;
   private readonly retries: number;
 
-  constructor(baseUrl: string, token: string, retries = 3) {
+  constructor(baseUrl: string, auth: Auth, retries = 3) {
     this.baseUrl = baseUrl.replace(/\/+$/, '');
-    this.token = token;
+    this.authorization = authHeader(auth);
     this.retries = retries;
   }
 
@@ -55,7 +57,7 @@ export class HttpClient {
       const res = await fetch(url, {
         method,
         headers: {
-          Authorization: `Bearer ${this.token}`,
+          Authorization: this.authorization,
           Accept: 'application/json',
           'X-Atlassian-Token': 'no-check',
           ...(opts.body !== undefined ? { 'Content-Type': opts.contentType ?? 'application/json' } : {}),

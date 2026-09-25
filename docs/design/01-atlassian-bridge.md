@@ -130,7 +130,14 @@ Flows may become configurable later, once we've seen how the team uses them.
    other agents (`~/.agents/skills`). A git post-commit hook (`sdlc-atl hooks install`) runs `sync` in the background
    whenever a commit touches planning artifacts, for every agent and for humans. Verified with a headless Claude
    Code session loading the plugin.
-7. **Cloud adapter.**
+7. ✅ **Cloud adapter** (2026-09-25; 87 tests total): per-product flavor (`dc` | `cloud`, detected from
+   `*.atlassian.net`), Basic email + API token auth for Cloud. Jira Cloud: `/search/jql` with page tokens (old `/search`
+   returns 410), epics via `parent` ("Epic Link" removed 2025; Agile epic endpoint deprecated), `accountId` identity.
+   Confluence Cloud (`ConfluenceCloudClient`): v2 pages/children/properties (v1 content API removed from the spec),
+   v1 kept only for CQL search and current user. MCP launcher passes Cloud credentials to mcp-atlassian.
+   **Verified against contract fakes only**; to verify live, point `~/.sdlc/atlassian.env` at a (free) Cloud site
+   and run the live suites. Unconfirmed until then: issue-link direction on Cloud, whether a site still requires
+   Epic Name.
 
 ## DC notes
 

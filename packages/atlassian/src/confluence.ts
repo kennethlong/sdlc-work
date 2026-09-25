@@ -10,18 +10,22 @@ export type ConfluencePage = {
   space?: { key: string };
   version?: { number: number };
   body?: { storage?: { value: string } };
-  ancestors?: { id: string; title: string }[];
+  /** Root first, direct parent last. Cloud fills only the direct parent (`{ id }`). */
+  ancestors?: { id: string; title?: string }[];
   _links: { webui: string; base?: string };
 };
 
 const EXPAND = 'body.storage,version,space,ancestors';
 
-/** Confluence Data Center REST client (content API). Markdown in, markdown out. */
+/**
+ * Confluence Data Center REST client (v1 content API). Markdown in, markdown out. `ConfluenceCloudClient`
+ * overrides the transport-level methods for Cloud's v2 API; `upsertPage` and friends are shared.
+ */
 export class ConfluenceClient {
   readonly http: HttpClient;
 
   constructor(config: ProductConfig) {
-    this.http = new HttpClient(config.baseUrl, config.token);
+    this.http = new HttpClient(config.baseUrl, config.auth);
   }
 
   get baseUrl() {

@@ -1,6 +1,6 @@
 import { HttpClient, type Query } from './http.ts';
 import { jiraWikiToMarkdown, markdownToJiraWiki } from './markup.ts';
-import type { ProductConfig } from './config.ts';
+import type { Flavor, ProductConfig } from './config.ts';
 
 export type JiraIssue = {
   id: string;
@@ -32,13 +32,19 @@ export type NewIssue = {
 
 type Field = { id: string; name: string; custom: boolean; schema?: { custom?: string } };
 
-/** Jira Software Data Center REST client (API v2 + Agile 1.0). Markdown in, markdown out. */
+/**
+ * Jira REST client (API v2: wiki-markup rich text on both flavors). Markdown in, markdown out.
+ * Data Center and Cloud differ in: search (`/search` vs `/search/jql` with page tokens), epics ("Epic Link"
+ * field + Agile API vs `parent`), and user identity (`name` vs `accountId`).
+ */
 export class JiraClient {
   readonly http: HttpClient;
+  readonly flavor: Flavor;
   private fieldsCache?: Promise<Field[]>;
 
   constructor(config: ProductConfig) {
-    this.http = new HttpClient(config.baseUrl, config.token);
+    this.http = new HttpClient(config.baseUrl, config.auth);
+    this.flavor = config.flavor;
   }
 
   get baseUrl() {
@@ -49,8 +55,10 @@ export class JiraClient {
     return `${this.http.baseUrl}/browse/${key}`;
   }
 
-  myself() {
-    return this.http.get<{ name: string; key: string; displayName: string; emailAddress: string }>('/rest/api/2/myself');
+  /** The authenticated user. `name` is the DC username, or the Cloud accountId (Cloud has no usernames). */
+  async myself(): Promise<{ name: string; displayName: string; emailAddress?: string; accountId?: string }> {
+    const me = await this.http.get<{ name?: string; accountId?: string; displayName: string; emailAddress?: string }>('/rest/api/2/myself');
+    return { ...me, name: me.name || me.accountId || '' };
   }
 
   async getIssue(key: string, fields = '*navigable'): Promise<JiraIssue | undefined> {
@@ -71,6 +79,17 @@ export class JiraClient {
   async search(jql: string, opts: { fields?: string[]; limit?: number } = {}): Promise<JiraIssue[]> {
     const out: JiraIssue[] = [];
     const limit = opts.limit ?? Infinity;
+    if (this.flavor === 'cloud') {
+      // Cloud removed /search (410 Gone); /search/jql pages with tokens and returns only `id` unless asked.
+      for (let token: string | undefined; out.length < limit; ) {
+        const query: Query = { jql, maxResults: Math.min(100, limit - out.length), fields: opts.fields?.join(',') ?? '*navigable', nextPageToken: token };
+        const page = await this.http.get<{ issues: JiraIssue[]; nextPageToken?: string; isLast?: boolean }>('/rest/api/2/search/jql', query);
+        out.push(...page.issues);
+        token = page.nextPageToken;
+        if (!token || page.isLast || !page.issues.length) break;
+      }
+      return out;
+    }
     for (let startAt = 0; out.length < limit; ) {
       const query: Query = { jql, startAt, maxResults: Math.min(100, limit - out.length), fields: opts.fields?.join(',') };
       const page = await this.http.get<{ issues: JiraIssue[]; total: number }>('/rest/api/2/search', query);
@@ -91,9 +110,33 @@ export class JiraClient {
       ...(issue.parentKey ? { parent: { key: issue.parentKey } } : {}),
       ...issue.fields,
     };
-    if (issue.issueType.toLowerCase() === 'epic') fields[await this.fieldId('Epic Name')] = issue.summary;
-    if (issue.epicKey) fields[await this.fieldId('Epic Link')] = issue.epicKey;
+    if (this.flavor === 'cloud') {
+      // Cloud: epics are parents ("Epic Link" was removed in 2025); Epic Name is optional.
+      if (issue.epicKey) fields.parent = { key: issue.epicKey };
+    } else {
+      if (issue.issueType.toLowerCase() === 'epic') fields[await this.fieldId('Epic Name')] = issue.summary;
+      if (issue.epicKey) fields[await this.fieldId('Epic Link')] = issue.epicKey;
+    }
     return this.http.post('/rest/api/2/issue', { fields });
+  }
+
+  /** Put an existing issue under an epic. */
+  async setEpic(key: string, epicKey: string) {
+    const fields = this.flavor === 'cloud' ? { parent: { key: epicKey } } : { [await this.fieldId('Epic Link')]: epicKey };
+    await this.updateIssue(key, { fields });
+  }
+
+  /** The epic an issue belongs to, if any. */
+  async epicOf(key: string): Promise<string | undefined> {
+    if (this.flavor === 'cloud') {
+      const issue = await this.getIssue(key, 'parent');
+      const parent = issue?.fields.parent as { key: string; fields?: { issuetype?: { name: string; hierarchyLevel?: number } } } | undefined;
+      const type = parent?.fields?.issuetype;
+      return parent && (type?.name.toLowerCase() === 'epic' || type?.hierarchyLevel === 1) ? parent.key : undefined;
+    }
+    const field = await this.fieldId('Epic Link').catch(() => undefined);
+    if (!field) return undefined;
+    return ((await this.getIssue(key, field))?.fields[field] as string | null) ?? undefined;
   }
 
   /** Update fields. `description` (if given) is markdown. */
@@ -156,8 +199,9 @@ export class JiraClient {
     await this.http.post(`/rest/api/2/issue/${encodeURIComponent(key)}/remotelink`, { globalId, object: { url, title } });
   }
 
-  /** Issues in an epic (stories, tasks, bugs), via the Agile API. */
+  /** Issues in an epic (stories, tasks, bugs): Agile API on DC, `parent = EPIC` on Cloud (Agile endpoint deprecated). */
   async epicIssues(epicKey: string): Promise<JiraIssue[]> {
+    if (this.flavor === 'cloud') return this.search(`parent = ${epicKey} ORDER BY created ASC`);
     const out: JiraIssue[] = [];
     for (let startAt = 0; ; ) {
       const page = await this.http.get<{ issues: JiraIssue[]; total: number }>(`/rest/agile/1.0/epic/${encodeURIComponent(epicKey)}/issue`, {

@@ -14,7 +14,9 @@ is written `sdlc-atl`.
 The CLI and the `atlassian` MCP server read, in order: environment variables, the nearest
 `infra/atlassian-dc/.env` (sdlc-work's local test stack), then `~/.sdlc/atlassian.env`.
 
-For a real instance, create `~/.sdlc/atlassian.env`:
+For a real instance, create `~/.sdlc/atlassian.env`.
+
+**Data Center** (self-hosted):
 
 ```
 JIRA_BASE_URL=https://jira.example.com
@@ -24,6 +26,16 @@ CONFLUENCE_PAT=<personal access token>
 ```
 
 Personal access tokens: in each product, avatar → Profile → Personal Access Tokens → Create token.
+
+**Cloud** (`*.atlassian.net`, detected automatically; force with `JIRA_FLAVOR=cloud` / `CONFLUENCE_FLAVOR=cloud`):
+
+```
+JIRA_BASE_URL=https://<site>.atlassian.net
+CONFLUENCE_BASE_URL=https://<site>.atlassian.net/wiki
+ATLASSIAN_EMAIL=<your Atlassian account email>
+ATLASSIAN_API_TOKEN=<API token from id.atlassian.com → Security → API tokens>
+```
+
 Never print token values or commit this file. Then check: `sdlc-atl whoami`.
 
 ## 2. Repo config (once per repo)

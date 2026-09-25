@@ -13,12 +13,29 @@ function loadConfig(opts = {}) {
   const file = opts.envFile ?? process.env.SDLC_ATLASSIAN_ENV ?? findLocalStackEnv(opts.cwd ?? process.cwd()) ?? (existsSync(userFile) ? userFile : void 0);
   const fromFile = file && existsSync(file) ? parseEnv(readFileSync(file, "utf8")) : {};
   const get = (k) => process.env[k] || fromFile[k] || "";
-  const product = (prefix) => {
-    const baseUrl = get(`${prefix}_BASE_URL`);
-    const token = get(`${prefix}_PAT`);
-    return baseUrl && token ? { baseUrl, token } : void 0;
+  const product = (p) => {
+    const baseUrl = get(`${p}_BASE_URL`).replace(/\/+$/, "");
+    if (!baseUrl) return void 0;
+    const flavorVar = get(`${p}_FLAVOR`).toLowerCase();
+    const flavor = flavorVar === "cloud" || flavorVar === "dc" ? flavorVar : detectFlavor(baseUrl);
+    const pat = get(`${p}_PAT`);
+    const user = get(`${p}_EMAIL`) || get("ATLASSIAN_EMAIL");
+    const apiToken = get(`${p}_API_TOKEN`) || get("ATLASSIAN_API_TOKEN");
+    let auth;
+    if (flavor === "dc" && pat) auth = { type: "bearer", token: pat };
+    else if (user && apiToken) auth = { type: "basic", user, token: apiToken };
+    else if (pat) auth = { type: "bearer", token: pat };
+    return auth ? { baseUrl, flavor, auth } : void 0;
   };
   return { jira: product("JIRA"), confluence: product("CONFLUENCE") };
+}
+function detectFlavor(baseUrl) {
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase();
+    return host.endsWith(".atlassian.net") || host.endsWith(".jira.com") ? "cloud" : "dc";
+  } catch {
+    return "dc";
+  }
 }
 function parseEnv(text) {
   const out = {};
@@ -44,8 +61,12 @@ if (!cfg.jira && !cfg.confluence) {
   process.exit(1);
 }
 var env = { TOOLSETS: "default", ...process.env };
-if (cfg.jira) Object.assign(env, { JIRA_URL: cfg.jira.baseUrl, JIRA_PERSONAL_TOKEN: cfg.jira.token });
-if (cfg.confluence) Object.assign(env, { CONFLUENCE_URL: cfg.confluence.baseUrl, CONFLUENCE_PERSONAL_TOKEN: cfg.confluence.token });
+for (const [prefix, p] of [["JIRA", cfg.jira], ["CONFLUENCE", cfg.confluence]]) {
+  if (!p) continue;
+  env[`${prefix}_URL`] = p.baseUrl;
+  if (p.auth.type === "bearer") env[`${prefix}_PERSONAL_TOKEN`] = p.auth.token;
+  else Object.assign(env, { [`${prefix}_USERNAME`]: p.auth.user, [`${prefix}_API_TOKEN`]: p.auth.token });
+}
 var child = spawn("uvx", [`mcp-atlassian@${VERSION}`, ...process.argv.slice(2)], { env, stdio: "inherit", shell: process.platform === "win32" });
 child.on("exit", (code, signal) => process.exit(signal ? 1 : code ?? 0));
 for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => child.kill(sig));

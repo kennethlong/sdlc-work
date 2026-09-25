@@ -17,8 +17,13 @@ if (!cfg.jira && !cfg.confluence) {
 }
 
 const env = { TOOLSETS: 'default', ...process.env };
-if (cfg.jira) Object.assign(env, { JIRA_URL: cfg.jira.baseUrl, JIRA_PERSONAL_TOKEN: cfg.jira.token });
-if (cfg.confluence) Object.assign(env, { CONFLUENCE_URL: cfg.confluence.baseUrl, CONFLUENCE_PERSONAL_TOKEN: cfg.confluence.token });
+// mcp-atlassian: DC uses <P>_PERSONAL_TOKEN; Cloud uses <P>_USERNAME (email) + <P>_API_TOKEN.
+for (const [prefix, p] of [['JIRA', cfg.jira], ['CONFLUENCE', cfg.confluence]]) {
+  if (!p) continue;
+  env[`${prefix}_URL`] = p.baseUrl;
+  if (p.auth.type === 'bearer') env[`${prefix}_PERSONAL_TOKEN`] = p.auth.token;
+  else Object.assign(env, { [`${prefix}_USERNAME`]: p.auth.user, [`${prefix}_API_TOKEN`]: p.auth.token });
+}
 
 const child = spawn('uvx', [`mcp-atlassian@${VERSION}`, ...process.argv.slice(2)], { env, stdio: 'inherit', shell: process.platform === 'win32' });
 child.on('exit', (code, signal) => process.exit(signal ? 1 : (code ?? 0)));

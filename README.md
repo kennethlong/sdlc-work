@@ -4,7 +4,7 @@ A toolset of AI agent skills, subagents, hooks, and scripts covering the full so
 lifecycle, built on Claude Code and portable Agent Skills. It started from
 [`ai-native-starter-pack`](https://github.com/coleam00/ai-native-starter-pack).
 
-**Status:** Atlassian bridge slices 1–6 done: CLI + library, agent tools (MCP), Track A (PRD → tickets → progress back), Track B (tickets, bug RCAs), engine = GSD or reference-style PIV, and a Claude Code plugin with 12 portable skills + auto-sync git hook.
+**Status:** Atlassian bridge slices 1–7 done (Data Center verified live; Cloud via contract tests): CLI + library, agent tools (MCP), Track A (PRD → tickets → progress back), Track B (tickets, bug RCAs), engine = GSD or reference-style PIV, and a Claude Code plugin with 12 portable skills + auto-sync git hook.
 
 ## Quick start
 

@@ -17766,6 +17766,58 @@ function withLock(root2, fn2, staleMs = 10 * 6e4) {
 // packages/atlassian/src/confluence.ts
 import { createHash } from "node:crypto";
 
+// packages/atlassian/src/config.ts
+import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
+import { homedir } from "node:os";
+import { dirname as dirname2, join as join2, resolve } from "node:path";
+function loadConfig(opts = {}) {
+  const userFile = join2(homedir(), ".sdlc", "atlassian.env");
+  const file = opts.envFile ?? process.env.SDLC_ATLASSIAN_ENV ?? findLocalStackEnv(opts.cwd ?? process.cwd()) ?? (existsSync2(userFile) ? userFile : void 0);
+  const fromFile = file && existsSync2(file) ? parseEnv(readFileSync2(file, "utf8")) : {};
+  const get = (k2) => process.env[k2] || fromFile[k2] || "";
+  const product = (p) => {
+    const baseUrl = get(`${p}_BASE_URL`).replace(/\/+$/, "");
+    if (!baseUrl) return void 0;
+    const flavorVar = get(`${p}_FLAVOR`).toLowerCase();
+    const flavor = flavorVar === "cloud" || flavorVar === "dc" ? flavorVar : detectFlavor(baseUrl);
+    const pat = get(`${p}_PAT`);
+    const user = get(`${p}_EMAIL`) || get("ATLASSIAN_EMAIL");
+    const apiToken = get(`${p}_API_TOKEN`) || get("ATLASSIAN_API_TOKEN");
+    let auth;
+    if (flavor === "dc" && pat) auth = { type: "bearer", token: pat };
+    else if (user && apiToken) auth = { type: "basic", user, token: apiToken };
+    else if (pat) auth = { type: "bearer", token: pat };
+    return auth ? { baseUrl, flavor, auth } : void 0;
+  };
+  return { jira: product("JIRA"), confluence: product("CONFLUENCE") };
+}
+function detectFlavor(baseUrl) {
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase();
+    return host.endsWith(".atlassian.net") || host.endsWith(".jira.com") ? "cloud" : "dc";
+  } catch {
+    return "dc";
+  }
+}
+function authHeader(auth) {
+  return auth.type === "bearer" ? `Bearer ${auth.token}` : `Basic ${Buffer.from(`${auth.user}:${auth.token}`).toString("base64")}`;
+}
+function parseEnv(text) {
+  const out2 = {};
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (m) out2[m[1]] = m[2].replace(/^(['"])(.*)\1$/, "$2");
+  }
+  return out2;
+}
+function findLocalStackEnv(start) {
+  for (let dir = resolve(start); ; dir = dirname2(dir)) {
+    const candidate = join2(dir, "infra", "atlassian-dc", ".env");
+    if (existsSync2(candidate)) return candidate;
+    if (dirname2(dir) === dir) return void 0;
+  }
+}
+
 // packages/atlassian/src/http.ts
 var AtlassianError = class extends Error {
   status;
@@ -17792,11 +17844,11 @@ function describe(body) {
 }
 var HttpClient = class {
   baseUrl;
-  token;
+  authorization;
   retries;
-  constructor(baseUrl, token, retries = 3) {
+  constructor(baseUrl, auth, retries = 3) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
-    this.token = token;
+    this.authorization = authHeader(auth);
     this.retries = retries;
   }
   async request(method, path, opts = {}) {
@@ -17806,7 +17858,7 @@ var HttpClient = class {
       const res = await fetch(url, {
         method,
         headers: {
-          Authorization: `Bearer ${this.token}`,
+          Authorization: this.authorization,
           Accept: "application/json",
           "X-Atlassian-Token": "no-check",
           ...opts.body !== void 0 ? { "Content-Type": opts.contentType ?? "application/json" } : {}
@@ -19309,7 +19361,7 @@ var EXPAND = "body.storage,version,space,ancestors";
 var ConfluenceClient = class {
   http;
   constructor(config) {
-    this.http = new HttpClient(config.baseUrl, config.token);
+    this.http = new HttpClient(config.baseUrl, config.auth);
   }
   get baseUrl() {
     return this.http.baseUrl;
@@ -19400,44 +19452,14 @@ function sourceHash(markdown) {
   return createHash("sha256").update(markdown).digest("hex");
 }
 
-// packages/atlassian/src/config.ts
-import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
-import { homedir } from "node:os";
-import { dirname as dirname2, join as join2, resolve } from "node:path";
-function loadConfig(opts = {}) {
-  const userFile = join2(homedir(), ".sdlc", "atlassian.env");
-  const file = opts.envFile ?? process.env.SDLC_ATLASSIAN_ENV ?? findLocalStackEnv(opts.cwd ?? process.cwd()) ?? (existsSync2(userFile) ? userFile : void 0);
-  const fromFile = file && existsSync2(file) ? parseEnv(readFileSync2(file, "utf8")) : {};
-  const get = (k2) => process.env[k2] || fromFile[k2] || "";
-  const product = (prefix) => {
-    const baseUrl = get(`${prefix}_BASE_URL`);
-    const token = get(`${prefix}_PAT`);
-    return baseUrl && token ? { baseUrl, token } : void 0;
-  };
-  return { jira: product("JIRA"), confluence: product("CONFLUENCE") };
-}
-function parseEnv(text) {
-  const out2 = {};
-  for (const line of text.split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
-    if (m) out2[m[1]] = m[2].replace(/^(['"])(.*)\1$/, "$2");
-  }
-  return out2;
-}
-function findLocalStackEnv(start) {
-  for (let dir = resolve(start); ; dir = dirname2(dir)) {
-    const candidate = join2(dir, "infra", "atlassian-dc", ".env");
-    if (existsSync2(candidate)) return candidate;
-    if (dirname2(dir) === dir) return void 0;
-  }
-}
-
 // packages/atlassian/src/jira.ts
 var JiraClient = class {
   http;
+  flavor;
   fieldsCache;
   constructor(config) {
-    this.http = new HttpClient(config.baseUrl, config.token);
+    this.http = new HttpClient(config.baseUrl, config.auth);
+    this.flavor = config.flavor;
   }
   get baseUrl() {
     return this.http.baseUrl;
@@ -19445,8 +19467,10 @@ var JiraClient = class {
   browseUrl(key) {
     return `${this.http.baseUrl}/browse/${key}`;
   }
-  myself() {
-    return this.http.get("/rest/api/2/myself");
+  /** The authenticated user. `name` is the DC username, or the Cloud accountId (Cloud has no usernames). */
+  async myself() {
+    const me2 = await this.http.get("/rest/api/2/myself");
+    return { ...me2, name: me2.name || me2.accountId || "" };
   }
   async getIssue(key, fields = "*navigable") {
     return this.http.get(`/rest/api/2/issue/${encodeURIComponent(key)}`, { fields }, [404]);
@@ -19463,6 +19487,16 @@ var JiraClient = class {
   async search(jql, opts = {}) {
     const out2 = [];
     const limit = opts.limit ?? Infinity;
+    if (this.flavor === "cloud") {
+      for (let token; out2.length < limit; ) {
+        const query = { jql, maxResults: Math.min(100, limit - out2.length), fields: opts.fields?.join(",") ?? "*navigable", nextPageToken: token };
+        const page = await this.http.get("/rest/api/2/search/jql", query);
+        out2.push(...page.issues);
+        token = page.nextPageToken;
+        if (!token || page.isLast || !page.issues.length) break;
+      }
+      return out2;
+    }
     for (let startAt = 0; out2.length < limit; ) {
       const query = { jql, startAt, maxResults: Math.min(100, limit - out2.length), fields: opts.fields?.join(",") };
       const page = await this.http.get("/rest/api/2/search", query);
@@ -19482,9 +19516,30 @@ var JiraClient = class {
       ...issue.parentKey ? { parent: { key: issue.parentKey } } : {},
       ...issue.fields
     };
-    if (issue.issueType.toLowerCase() === "epic") fields[await this.fieldId("Epic Name")] = issue.summary;
-    if (issue.epicKey) fields[await this.fieldId("Epic Link")] = issue.epicKey;
+    if (this.flavor === "cloud") {
+      if (issue.epicKey) fields.parent = { key: issue.epicKey };
+    } else {
+      if (issue.issueType.toLowerCase() === "epic") fields[await this.fieldId("Epic Name")] = issue.summary;
+      if (issue.epicKey) fields[await this.fieldId("Epic Link")] = issue.epicKey;
+    }
     return this.http.post("/rest/api/2/issue", { fields });
+  }
+  /** Put an existing issue under an epic. */
+  async setEpic(key, epicKey) {
+    const fields = this.flavor === "cloud" ? { parent: { key: epicKey } } : { [await this.fieldId("Epic Link")]: epicKey };
+    await this.updateIssue(key, { fields });
+  }
+  /** The epic an issue belongs to, if any. */
+  async epicOf(key) {
+    if (this.flavor === "cloud") {
+      const issue = await this.getIssue(key, "parent");
+      const parent = issue?.fields.parent;
+      const type = parent?.fields?.issuetype;
+      return parent && (type?.name.toLowerCase() === "epic" || type?.hierarchyLevel === 1) ? parent.key : void 0;
+    }
+    const field = await this.fieldId("Epic Link").catch(() => void 0);
+    if (!field) return void 0;
+    return (await this.getIssue(key, field))?.fields[field] ?? void 0;
   }
   /** Update fields. `description` (if given) is markdown. */
   async updateIssue(key, changes) {
@@ -19534,8 +19589,9 @@ var JiraClient = class {
   async addRemoteLink(key, url, title, globalId = url) {
     await this.http.post(`/rest/api/2/issue/${encodeURIComponent(key)}/remotelink`, { globalId, object: { url, title } });
   }
-  /** Issues in an epic (stories, tasks, bugs), via the Agile API. */
+  /** Issues in an epic (stories, tasks, bugs): Agile API on DC, `parent = EPIC` on Cloud (Agile endpoint deprecated). */
   async epicIssues(epicKey) {
+    if (this.flavor === "cloud") return this.search(`parent = ${epicKey} ORDER BY created ASC`);
     const out2 = [];
     for (let startAt = 0; ; ) {
       const page = await this.http.get(`/rest/agile/1.0/epic/${encodeURIComponent(epicKey)}/issue`, {
@@ -19553,6 +19609,108 @@ var JiraClient = class {
     const f = (await this.fieldsCache).find((x2) => x2.name.toLowerCase() === name.toLowerCase());
     if (!f) throw new Error(`Jira field '${name}' not found on ${this.baseUrl}`);
     return f.id;
+  }
+};
+
+// packages/atlassian/src/confluence-cloud.ts
+var ConfluenceCloudClient = class extends ConfluenceClient {
+  spaceIds = /* @__PURE__ */ new Map();
+  spaceKeys = /* @__PURE__ */ new Map();
+  async currentUser() {
+    const u = await this.http.get("/rest/api/user/current");
+    return { username: u.email || u.publicName || u.accountId, displayName: u.displayName ?? u.publicName ?? "" };
+  }
+  async getPage(id) {
+    const p = await this.http.get(`/api/v2/pages/${encodeURIComponent(id)}`, { "body-format": "storage" }, [404]);
+    return p && this.normalize(p);
+  }
+  async findPage(spaceKey, title) {
+    const r = await this.http.get("/api/v2/pages", {
+      "space-id": await this.spaceId(spaceKey),
+      title,
+      status: "current",
+      "body-format": "storage"
+    });
+    return r.results[0] && this.normalize(r.results[0], spaceKey);
+  }
+  async search(cql, limit = 25) {
+    const r = await this.http.get("/rest/api/search", { cql, limit });
+    return r.results.flatMap((x2) => x2.content ? [{ id: x2.content.id, type: x2.content.type, title: x2.content.title, _links: x2.content._links }] : []);
+  }
+  async children(pageId) {
+    const r = await this.http.get(`/api/v2/pages/${encodeURIComponent(pageId)}/direct-children`, { limit: 250 });
+    return r.results.map((c) => ({ id: c.id, type: c.type ?? "page", title: c.title, _links: { webui: `/pages/viewpage.action?pageId=${c.id}` } }));
+  }
+  async createPage(opts) {
+    const p = await this.http.post("/api/v2/pages", {
+      spaceId: await this.spaceId(opts.spaceKey),
+      status: "current",
+      title: opts.title,
+      ...opts.parentId ? { parentId: opts.parentId } : {},
+      body: { representation: "storage", value: markdownToStorage(opts.markdown) }
+    });
+    return this.normalize(p, opts.spaceKey);
+  }
+  async updatePage(id, opts) {
+    const current = await this.getPage(id);
+    if (!current) throw new Error(`Confluence page ${id} not found`);
+    const p = await this.http.put(`/api/v2/pages/${encodeURIComponent(id)}`, {
+      id,
+      status: "current",
+      title: opts.title ?? current.title,
+      body: { representation: "storage", value: markdownToStorage(opts.markdown) },
+      version: { number: (current.version?.number ?? 0) + 1, ...opts.message ? { message: opts.message } : {} }
+    });
+    return this.normalize(p, current.space?.key);
+  }
+  async deletePage(id) {
+    await this.http.request("DELETE", `/api/v2/pages/${encodeURIComponent(id)}`, { tolerate: [404] });
+  }
+  // v2 content properties are addressed by numeric id; the only lookup by key is the list filter.
+  async property(pageId, key) {
+    const r = await this.http.get(`/api/v2/pages/${encodeURIComponent(pageId)}/properties`, { key });
+    return r.results.find((p) => p.key === key);
+  }
+  async getProperty(pageId, key) {
+    return (await this.property(pageId, key))?.value;
+  }
+  async setProperty(pageId, key, value) {
+    const existing = await this.property(pageId, key);
+    const base = `/api/v2/pages/${encodeURIComponent(pageId)}/properties`;
+    if (existing) await this.http.put(`${base}/${existing.id}`, { key, value, version: { number: existing.version.number + 1 } });
+    else await this.http.post(base, { key, value });
+  }
+  async spaceId(spaceKey) {
+    let id = this.spaceIds.get(spaceKey);
+    if (!id) {
+      id = this.http.get("/api/v2/spaces", { keys: spaceKey }).then((r) => {
+        const s = r.results.find((x2) => x2.key === spaceKey);
+        if (!s) throw new Error(`Confluence space ${spaceKey} not found`);
+        return s.id;
+      });
+      this.spaceIds.set(spaceKey, id);
+    }
+    return id;
+  }
+  spaceKey(spaceId) {
+    let key = this.spaceKeys.get(spaceId);
+    if (!key) {
+      key = this.http.get(`/api/v2/spaces/${encodeURIComponent(spaceId)}`).then((s) => s.key);
+      this.spaceKeys.set(spaceId, key);
+    }
+    return key;
+  }
+  async normalize(p, spaceKey) {
+    return {
+      id: p.id,
+      type: "page",
+      title: p.title,
+      space: { key: spaceKey ?? await this.spaceKey(p.spaceId) },
+      version: p.version,
+      body: p.body?.storage ? { storage: { value: p.body.storage.value } } : void 0,
+      ancestors: p.parentId ? [{ id: p.parentId }] : [],
+      _links: p._links
+    };
   }
 };
 
@@ -20198,13 +20356,12 @@ import { dirname as dirname4, join as join7 } from "node:path";
 var BUG_TYPES = /^(bug|defect|incident|problem)$/i;
 async function importTicket(opts) {
   const { jira, root: root2, key, engine, state } = opts;
-  const epicField = await jira.fieldId("Epic Link").catch(() => void 0);
-  const issue = await jira.getIssue(key, ["summary", "issuetype", "status", "description", "labels", "priority", "comment", epicField].filter(Boolean).join(","));
+  const issue = await jira.getIssue(key, "summary,issuetype,status,description,labels,priority,comment");
   if (!issue) throw new Error(`Issue ${key} not found`);
   const f = issue.fields;
   const type = f.issuetype?.name ?? "Issue";
   const isBug = BUG_TYPES.test(type);
-  const epic = epicField ? f[epicField] ?? void 0 : void 0;
+  const epic = await jira.epicOf(issue.key);
   const description = JiraClient.descriptionMarkdown(issue);
   const criteria = acceptanceCriteria(description);
   const comments = (f.comment?.comments ?? []).slice(-5);
@@ -20302,7 +20459,7 @@ async function escalateTicket(opts) {
   const { jira, key, epic, state } = opts;
   const target = await jira.getIssue(epic, "issuetype,summary");
   if (target?.fields.issuetype?.name.toLowerCase() !== "epic") throw new Error(`${epic} is not an Epic`);
-  await jira.updateIssue(key, { fields: { [await jira.fieldId("Epic Link")]: epic } });
+  await jira.setEpic(key, epic);
   await jira.addComment(key, `Escalated to Track A: bigger than one ticket. Now part of ${epic} (${target.fields.summary}); needs a PRD and a ticket breakdown.`);
   state.data.tickets ??= {};
   state.data.tickets[key] = { ...state.data.tickets[key], escalatedTo: epic };
@@ -20316,12 +20473,12 @@ function connect(opts) {
   let confluence;
   return {
     get jira() {
-      if (!cfg2.jira) throw new Error("Jira not configured: set JIRA_BASE_URL and JIRA_PAT (or run infra/atlassian-dc/dc.ps1 up).");
+      if (!cfg2.jira) throw new Error("Jira not configured: set JIRA_BASE_URL plus JIRA_PAT (Data Center) or JIRA_EMAIL + JIRA_API_TOKEN (Cloud), e.g. in ~/.sdlc/atlassian.env.");
       return jira ??= new JiraClient(cfg2.jira);
     },
     get confluence() {
-      if (!cfg2.confluence) throw new Error("Confluence not configured: set CONFLUENCE_BASE_URL and CONFLUENCE_PAT.");
-      return confluence ??= new ConfluenceClient(cfg2.confluence);
+      if (!cfg2.confluence) throw new Error("Confluence not configured: set CONFLUENCE_BASE_URL plus CONFLUENCE_PAT (Data Center) or CONFLUENCE_EMAIL + CONFLUENCE_API_TOKEN (Cloud; base URL ends in /wiki).");
+      return confluence ??= cfg2.confluence.flavor === "cloud" ? new ConfluenceCloudClient(cfg2.confluence) : new ConfluenceClient(cfg2.confluence);
     }
   };
 }
