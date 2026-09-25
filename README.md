@@ -4,7 +4,7 @@ A toolset of AI agent skills, subagents, hooks, and scripts covering the full so
 lifecycle, built on Claude Code and portable Agent Skills. It started from
 [`ai-native-starter-pack`](https://github.com/coleam00/ai-native-starter-pack).
 
-**Status:** Atlassian bridge slices 1–3 done (client, agent tools, filing a GSD roadmap as Jira stories + Confluence breakdown, syncing progress and verification reports back). Local Jira/Confluence DC stack in `infra/`.
+**Status:** Atlassian bridge slices 1–4 done (client, agent tools, filing a GSD roadmap as Jira stories + Confluence breakdown, syncing progress and verification reports back; engine = GSD or reference-style PIV). Local Jira/Confluence DC stack in `infra/`.
 
 ## Docs
 

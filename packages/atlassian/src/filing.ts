@@ -8,7 +8,7 @@
 import type { ConfluenceClient } from './confluence.ts';
 import type { JiraClient, JiraIssue } from './jira.ts';
 import type { StateFile } from './state.ts';
-import { waves, type Breakdown, type WorkItem } from './work.ts';
+import { cyclicItems, waves, type Breakdown, type WorkItem } from './work.ts';
 
 export type ItemAction = 'created' | 'adopted' | 'existing' | 'would-create' | 'would-adopt';
 export type FilingReport = {
@@ -16,6 +16,7 @@ export type FilingReport = {
   items: { id: string; title: string; key?: string; action: ItemAction; wave: number }[];
   links: { from: string; to: string; action: 'created' | 'existing' | 'would-create' }[];
   page?: { title: string; id?: string; url?: string; action: string };
+  warnings: string[];
 };
 
 export type FilingOptions = {
@@ -42,7 +43,9 @@ export async function fileBreakdown(opts: FilingOptions): Promise<FilingReport> 
   }
   const project = (epic.fields.project as { key: string }).key;
   const children = await jira.epicIssues(epicKey);
-  const report: FilingReport = { epic: epicKey, items: [], links: [] };
+  const report: FilingReport = { epic: epicKey, items: [], links: [], warnings: [] };
+  const cyclic = cyclicItems(breakdown.items);
+  if (cyclic.length) report.warnings.push(`Dependency cycle (check the plan's dependencies); filed in a final wave: ${cyclic.join(', ')}`);
   const keyOf = new Map<string, string>();
 
   const ordered = waves(breakdown.items);

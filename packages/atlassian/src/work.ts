@@ -42,28 +42,49 @@ export type Breakdown = {
 
 export type EngineName = 'gsd' | 'piv';
 
+export type LoadOptions = {
+  /** Item id -> filed Jira key, so engines can also recognise artifacts named after the key (e.g. "sdlc-5-…"). */
+  issueKeys?: Record<string, string>;
+};
+
 export interface Engine {
   readonly name: EngineName;
   /** True if `root` holds this engine's planning artifacts. */
   detect(root: string): boolean;
-  loadBreakdown(root: string): Promise<Breakdown>;
+  loadBreakdown(root: string, opts?: LoadOptions): Promise<Breakdown>;
 }
 
 /**
  * Group items into execution waves: each wave's items depend only on earlier waves. Unknown dependency ids are
- * ignored (e.g. a phase from a finished milestone). Throws on cycles.
+ * ignored (e.g. a phase from a finished milestone). Items caught in a dependency cycle (dependencies come from
+ * human-written text, so this happens) go into one final wave; `strict` throws instead. See `cyclicItems`.
  */
-export function waves(items: WorkItem[]): WorkItem[][] {
+export function waves(items: WorkItem[], opts: { strict?: boolean } = {}): WorkItem[][] {
   const ids = new Set(items.map((i) => i.id));
   const placed = new Set<string>();
   const out: WorkItem[][] = [];
   let remaining = items;
   while (remaining.length) {
     const wave = remaining.filter((i) => i.dependsOn.every((d) => !ids.has(d) || placed.has(d)));
-    if (!wave.length) throw new Error(`Dependency cycle among: ${remaining.map((i) => i.id).join(', ')}`);
+    if (!wave.length) {
+      if (opts.strict) throw new Error(`Dependency cycle among: ${remaining.map((i) => i.id).join(', ')}`);
+      out.push(remaining);
+      break;
+    }
     wave.forEach((i) => placed.add(i.id));
     out.push(wave);
     remaining = remaining.filter((i) => !placed.has(i.id));
   }
   return out;
+}
+
+/** Ids that can't be ordered (in or behind a dependency cycle); empty when the graph is acyclic. */
+export function cyclicItems(items: WorkItem[]): string[] {
+  try {
+    waves(items, { strict: true });
+    return [];
+  } catch {
+    const ordered = new Set(waves(items).slice(0, -1).flat().map((i) => i.id));
+    return items.filter((i) => !ordered.has(i.id)).map((i) => i.id);
+  }
 }

@@ -1,24 +1,20 @@
-// End-to-end Track A filing against the local DC stack: GSD fixture -> stories under an epic + breakdown page.
+// End-to-end Track A filing against the local DC stack, for every engine: fixture -> stories under an epic + breakdown page.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { cpSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { connect, ConfluenceClient, fileBreakdown, GsdEngine, JiraClient, loadConfig, StateFile, type Breakdown } from '../src/index.ts';
-import { findGsdTools } from '../src/engines/index.ts';
+import { connect, ConfluenceClient, fileBreakdown, JiraClient, loadConfig, StateFile, type Breakdown } from '../src/index.ts';
+import { ENGINE_CASES } from './engines.ts';
 
 const cfg = loadConfig();
-const fixture = fileURLToPath(new URL('./fixtures/gsd-project', import.meta.url));
-const hasGsd = (() => {
-  try {
-    return !!findGsdTools(fixture);
-  } catch {
-    return false;
-  }
-})();
-const run = `t${Date.now().toString(36)}`;
 
-describe.skipIf(!cfg.jira || !cfg.confluence || !hasGsd)('file-breakdown (live)', () => {
+describe.each(ENGINE_CASES)('file-breakdown (live, $name engine)', (ec) => {
+  const run = `t${Date.now().toString(36)}${ec.name}`;
+  const id2 = ec.ids[1];
+  if (!cfg.jira || !cfg.confluence || !ec.available) {
+    it.skip('needs the local DC stack and the engine installed', () => {});
+    return;
+  }
   let jira: JiraClient;
   let confluence: ConfluenceClient;
   let root: string;
@@ -29,8 +25,8 @@ describe.skipIf(!cfg.jira || !cfg.confluence || !hasGsd)('file-breakdown (live)'
   beforeAll(async () => {
     ({ jira, confluence } = connect());
     root = mkdtempSync(join(tmpdir(), 'sdlc-filing-'));
-    cpSync(fixture, root, { recursive: true });
-    breakdown = await new GsdEngine().loadBreakdown(root);
+    cpSync(ec.fixture, root, { recursive: true });
+    breakdown = await ec.engine().loadBreakdown(root);
     epic = (await jira.createIssue({ project: 'SDLC', issueType: 'Epic', summary: `${run} Reporting Improvements` })).key;
     prdId = (await confluence.createPage({ spaceKey: 'SDLC', title: `${run} PRD: Reporting Improvements`, markdown: '# PRD\n\nExport all the things.' })).id;
   });
@@ -56,9 +52,9 @@ describe.skipIf(!cfg.jira || !cfg.confluence || !hasGsd)('file-breakdown (live)'
   it('files stories in wave order with dependency links and a breakdown page under the PRD', async () => {
     const r = await file();
     expect(r.items.map((i) => [i.id, i.action, i.wave])).toEqual([
-      ['1', 'created', 1],
-      ['2', 'created', 2],
-      ['3', 'created', 2],
+      [ec.ids[0], 'created', 1],
+      [ec.ids[1], 'created', 2],
+      [ec.ids[2], 'created', 2],
     ]);
     const [k1, k2, k3] = r.items.map((i) => i.key!);
     expect(r.links.map((l) => [l.from, l.to, l.action])).toEqual([
@@ -67,7 +63,7 @@ describe.skipIf(!cfg.jira || !cfg.confluence || !hasGsd)('file-breakdown (live)'
     ]);
 
     const story = (await jira.getIssue(k2!))!;
-    expect(story.fields.labels).toEqual(expect.arrayContaining(['sdlc', 'sdlc-item-2']));
+    expect(story.fields.labels).toEqual(expect.arrayContaining(['sdlc', `sdlc-item-${id2}`]));
     const md = JiraClient.descriptionMarkdown(story);
     expect(md).toContain('- [ ] Report viewer shows an Export button');
     expect(md).toContain('**Depends on:** CSV export endpoint');
@@ -101,8 +97,8 @@ describe.skipIf(!cfg.jira || !cfg.confluence || !hasGsd)('file-breakdown (live)'
     const root2 = mkdtempSync(join(tmpdir(), 'sdlc-filing-'));
     try {
       const r = await fileBreakdown({ jira, breakdown, epicKey: epic2, state: new StateFile(root2) });
-      expect(r.items.find((i) => i.id === '2')).toMatchObject({ key: manual, action: 'adopted' });
-      expect((await jira.getIssue(manual))!.fields.labels).toContain('sdlc-item-2');
+      expect(r.items.find((i) => i.id === id2)).toMatchObject({ key: manual, action: 'adopted' });
+      expect((await jira.getIssue(manual))!.fields.labels).toContain(`sdlc-item-${id2}`);
     } finally {
       for (const i of await jira.epicIssues(epic2)) await jira.deleteIssue(i.key);
       await jira.deleteIssue(epic2);

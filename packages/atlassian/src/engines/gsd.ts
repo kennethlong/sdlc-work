@@ -1,8 +1,9 @@
 import { execFile } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { readText } from './text.ts';
 import type { Breakdown, Engine, Verification, WorkItem, WorkStatus } from '../work.ts';
 
 const run = promisify(execFile);
@@ -30,27 +31,28 @@ export class GsdEngine implements Engine {
   async loadBreakdown(root: string): Promise<Breakdown> {
     const tools = this.toolsPath ?? findGsdTools(root);
     const analysis = await gsd<{ phases: AnalyzedPhase[] }>(tools, root, ['roadmap', 'analyze']);
-    const items: WorkItem[] = [];
-    for (const p of analysis.phases) {
-      const detail = await gsd<PhaseDetail>(tools, root, ['roadmap', 'get-phase', p.number]);
-      let verification: Verification | undefined;
-      if (p.disk_status !== 'no_directory') {
-        const dir = (await gsd<FoundPhase>(tools, root, ['find-phase', p.number])).directory;
-        if (dir) verification = readVerification(root, dir);
-      }
-      items.push({
-        id: p.number,
+    const known = new Set(analysis.phases.map((p) => canonicalPhase(p.number)));
+    // Each gsd-tools call is a node process (~0.5s); run the per-phase calls in parallel so a 25-phase
+    // roadmap takes seconds, not a minute.
+    const items = await mapLimit(analysis.phases, 8, async (p): Promise<WorkItem> => {
+      const [detail, found] = await Promise.all([
+        gsd<PhaseDetail>(tools, root, ['roadmap', 'get-phase', p.number]),
+        p.disk_status === 'no_directory' ? undefined : gsd<FoundPhase>(tools, root, ['find-phase', p.number]),
+      ]);
+      const verification = found?.directory ? readVerification(root, found.directory) : undefined;
+      return {
+        id: canonicalPhase(p.number),
         title: p.name,
         goal: p.goal ?? '',
         acceptanceCriteria: detail.success_criteria ?? [],
         requirements: parseRequirements(detail.section ?? ''),
-        dependsOn: parseDependsOn(p.depends_on),
+        dependsOn: parseDependsOn(p.depends_on, known),
         status: statusOf(p, verification),
         source: `.planning/ROADMAP.md (Phase ${p.number})`,
         verification,
-      });
-    }
-    const roadmap = readFileSync(join(root, '.planning', 'ROADMAP.md'), 'utf8');
+      };
+    });
+    const roadmap = readText(join(root, '.planning', 'ROADMAP.md'));
     return {
       engine: 'gsd',
       title: roadmap.match(/^#\s+Roadmap:\s*(.+)$/m)?.[1]?.trim() ?? 'Roadmap',
@@ -60,11 +62,38 @@ export class GsdEngine implements Engine {
   }
 }
 
-/** "Phase 1", "Phases 1 and 2.1", "Phase 1, Phase 3", "Nothing (first phase)" -> ids. */
-export function parseDependsOn(text: string | null): string[] {
-  if (!text || /^\s*(nothing|none|-|n\/a)/i.test(text)) return [];
-  // Normalise "02.1" -> "2.1" to match the phase numbers gsd-tools reports.
-  return [...text.matchAll(/\d+(?:\.\d+)*/g)].map((m) => m[0].split('.').map((n) => String(Number(n))).join('.'));
+/** GSD writes the same phase as "04.3" and "4.3"; use one form for ids and dependencies. */
+export function canonicalPhase(n: string): string {
+  return n.split('.').map((s) => String(Number(s))).join('.');
+}
+
+/**
+ * GSD's "Depends on" is free text for humans, e.g.
+ *   "Phase 5.4 (live-channel model it extends); lands adjacent to Phase 9 with …"
+ *   "**Phase 5.2** — its evidence base …"   "Phase 04.4 / 05.7 (workspace services)"
+ * Be conservative: drop parentheticals, stop at the first ";" or dash-clause (commentary), take only numbers that
+ * directly follow "Phase(s)", and when `known` is given keep only ids that exist in the roadmap.
+ */
+export function parseDependsOn(text: string | null, known?: Set<string>): string[] {
+  if (!text || /^\s*(nothing|none|-|n\/a)\b/i.test(text)) return [];
+  let s = text.replace(/\*\*/g, '');
+  for (let prev = ''; prev !== s; ) {
+    prev = s;
+    s = s.replace(/\([^()]*\)/g, ' ');
+  }
+  s = s.split(/;|\s[—–]\s|\s-\s/)[0]!;
+  const ids: string[] = [];
+  const num = String.raw`\d+(?:\.\d+)*`;
+  const listRe = new RegExp(String.raw`\bphases?\s+(${num}(?:\s*(?:,|/|&|\band\b|\bor\b|-|–)\s*(?:phases?\s+)?${num})*)`, 'gi');
+  for (const m of s.matchAll(listRe)) {
+    const list = m[1]!;
+    for (const part of list.split(/\s*(?:,|\/|&|\band\b|\bor\b)\s*(?:phases?\s+)?/i)) {
+      const range = part.match(new RegExp(String.raw`^(\d+)\s*[-–]\s*(\d+)$`));
+      if (range) for (let i = Number(range[1]); i <= Number(range[2]); i++) ids.push(String(i));
+      else if (part.trim()) ids.push(canonicalPhase(part.trim()));
+    }
+  }
+  return [...new Set(ids)].filter((id) => !known || known.has(id));
 }
 
 export function parseRequirements(section: string): string[] {
@@ -106,7 +135,7 @@ export function readVerification(root: string, phaseDir: string): Verification |
     .sort()
     .at(-1);
   if (!file) return undefined;
-  const text = readFileSync(join(abs, file), 'utf8').replace(/\r\n/g, '\n');
+  const text = readText(join(abs, file));
   const fm = text.match(/^---\n([\s\S]*?)\n---\n?/);
   const meta: Record<string, string> = {};
   for (const line of fm?.[1]?.split('\n') ?? []) {
@@ -139,4 +168,18 @@ export function findGsdTools(root: string): string {
   const found = candidates.find((c) => existsSync(c));
   if (!found) throw new Error(`gsd-tools not found. Install GSD Core (npx @opengsd/gsd-core) or set GSD_TOOLS. Looked in:\n  ${candidates.join('\n  ')}`);
   return found;
+}
+
+/** Promise.all with at most `limit` in flight; preserves input order. */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]!);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
 }

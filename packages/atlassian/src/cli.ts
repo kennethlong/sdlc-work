@@ -14,7 +14,7 @@ import { resolveEngine, readSdlcConfig } from './engines/index.ts';
 import { fileBreakdown, type FilingReport } from './filing.ts';
 import { StateFile } from './state.ts';
 import { syncProgress, type SyncReport } from './sync.ts';
-import { waves } from './work.ts';
+import { cyclicItems, waves } from './work.ts';
 
 const [command, ...rest] = process.argv.slice(2);
 const { values: opt } = parseArgs({
@@ -44,11 +44,12 @@ try {
       break;
     }
     case 'breakdown': {
-      const b = await resolveEngine(root, opt.engine).loadBreakdown(root);
+      const b = await resolveEngine(root, opt.engine).loadBreakdown(root, { issueKeys: issueKeysOf(root) });
       out(b, () =>
         [
           `${b.title} (${b.engine}, ${b.items.length} items)`,
           ...waves(b.items).map((w, n) => `  Wave ${n + 1}: ${w.map((i) => `[${i.id}] ${i.title} (${i.status})`).join(' | ')}`),
+          ...cyclicItems(b.items).map((id) => `  warning: ${id} is in a dependency cycle (placed in the last wave)`),
         ].join('\n'),
       );
       break;
@@ -62,7 +63,7 @@ try {
       const report = await fileBreakdown({
         jira: c.jira,
         confluence: prdPageId ? c.confluence : undefined,
-        breakdown: await resolveEngine(root, opt.engine ?? cfg.engine).loadBreakdown(root),
+        breakdown: await resolveEngine(root, opt.engine ?? cfg.engine).loadBreakdown(root, { issueKeys: issueKeysOf(root) }),
         epicKey,
         prdPageId,
         state: new StateFile(root),
@@ -84,7 +85,7 @@ try {
       const report = await syncProgress({
         jira: c.jira,
         confluence,
-        breakdown: await resolveEngine(root, opt.engine ?? cfg.engine).loadBreakdown(root),
+        breakdown: await resolveEngine(root, opt.engine ?? cfg.engine).loadBreakdown(root, { issueKeys: issueKeysOf(root) }),
         state: new StateFile(root),
         transitions: cfg.jira?.transitions,
         confluenceSpace: cfg.confluence?.space,
@@ -108,6 +109,7 @@ function formatReport(r: FilingReport, dryRun: boolean): string {
   const newLinks = r.links.filter((l) => l.action !== 'existing');
   if (newLinks.length) lines.push(`  links: ${newLinks.map((l) => `${l.from} blocks ${l.to} (${l.action})`).join(', ')}`);
   if (r.page) lines.push(`  page: ${r.page.title} (${r.page.action})${r.page.url ? ` ${r.page.url}` : ''}`);
+  for (const w of r.warnings) lines.push(`  warning: ${w}`);
   return lines.join('\n');
 }
 
@@ -120,4 +122,9 @@ function formatSync(r: SyncReport, dryRun: boolean): string {
   }
   if (r.unfiled.length) lines.push(`  not filed yet: ${r.unfiled.join(', ')} (run file-breakdown)`);
   return lines.join('\n');
+}
+
+/** Filed Jira keys by item id, so engines can match artifacts named after the key. */
+function issueKeysOf(dir: string): Record<string, string> {
+  return Object.fromEntries(Object.entries(new StateFile(dir).data.items).map(([id, v]) => [id, v.issueKey]));
 }

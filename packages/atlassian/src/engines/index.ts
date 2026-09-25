@@ -1,39 +1,44 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Engine, EngineName } from '../work.ts';
+import type { Engine, EngineName, WorkStatus } from '../work.ts';
 import { GsdEngine } from './gsd.ts';
+import { PivEngine } from './piv.ts';
 
-export { GsdEngine, findGsdTools, parseDependsOn, parseRequirements } from './gsd.ts';
-
-const engines: Record<EngineName, () => Engine> = {
-  gsd: () => new GsdEngine(),
-  piv: () => {
-    throw new Error("The 'piv' engine (reference-style skills) is planned but not built yet; use --engine gsd.");
-  },
-};
-
-/** Resolve the engine: explicit name, then `.sdlc/config.json` "engine", then auto-detect. */
-export function resolveEngine(root: string, name?: string): Engine {
-  const configured = name ?? readSdlcConfig(root).engine;
-  if (configured) {
-    if (!(configured in engines)) throw new Error(`Unknown engine '${configured}' (expected: ${Object.keys(engines).join(', ')})`);
-    return engines[configured as EngineName]();
-  }
-  const gsd = new GsdEngine();
-  if (gsd.detect(root)) return gsd;
-  throw new Error(`No planning artifacts found in ${root} (expected .planning/ROADMAP.md for GSD). Pass --engine.`);
-}
+export { GsdEngine, findGsdTools, parseDependsOn, parseRequirements, readVerification } from './gsd.ts';
+export { PivEngine, parseSpec, executionVerdict, type SpecTicket } from './piv.ts';
 
 /** `.sdlc/config.json`. */
 export type SdlcConfig = {
   engine?: string;
   epic?: string;
   prdPageId?: string;
-  jira?: { issueType?: string; transitions?: Partial<Record<import('../work.ts').WorkStatus, string>> };
+  /** piv engine: which docs/specs/*.md to use when there are several. */
+  spec?: string;
+  jira?: { issueType?: string; transitions?: Partial<Record<WorkStatus, string>> };
   confluence?: { space?: string };
 };
 
 export function readSdlcConfig(root: string): SdlcConfig {
   const file = join(root, '.sdlc', 'config.json');
   return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as SdlcConfig) : {};
+}
+
+const factories: Record<EngineName, (cfg: SdlcConfig) => Engine> = {
+  gsd: () => new GsdEngine(),
+  piv: (cfg) => new PivEngine({ spec: cfg.spec }),
+};
+
+/** Resolve the engine: explicit name, then `.sdlc/config.json` "engine", then auto-detect (GSD first). */
+export function resolveEngine(root: string, name?: string): Engine {
+  const cfg = readSdlcConfig(root);
+  const configured = name ?? cfg.engine;
+  if (configured) {
+    if (!(configured in factories)) throw new Error(`Unknown engine '${configured}' (expected: ${Object.keys(factories).join(', ')})`);
+    return factories[configured as EngineName](cfg);
+  }
+  for (const f of Object.values(factories)) {
+    const engine = f(cfg);
+    if (engine.detect(root)) return engine;
+  }
+  throw new Error(`No planning artifacts in ${root}: expected .planning/ROADMAP.md (gsd) or docs/specs/*.md (piv). Pass --engine.`);
 }

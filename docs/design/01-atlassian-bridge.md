@@ -16,10 +16,17 @@ Status: flow agreed 2026-09-24. Targets Jira Software DC 10.3 and Confluence DC 
 `docs/specs/`). The Jira/Confluence side works on an engine-neutral **work breakdown** (items with title, goal,
 acceptance criteria, requirement ids, dependencies, status); each engine has an adapter that produces it.
 
-| Engine | Planning/execution | Breakdown source | Status |
-|---|---|---|---|
-| `gsd` | GSD Core (discuss → plan → execute → verify) | `.planning/ROADMAP.md` phases, read through `gsd-tools` | Slice 2 |
-| `piv` | Reference-style skills (prime → plan-feature → execute → validate) | `docs/specs/<epic>.md` tickets (the reference's `/spec` output) | Follow-up slice |
+| Engine | Planning/execution | Breakdown source | Progress + verification | Status |
+|---|---|---|---|---|
+| `gsd` | GSD Core (discuss → plan → execute → verify) | `.planning/ROADMAP.md` phases, via `gsd-tools` | `disk_status` + `*-VERIFICATION.md` front matter | ✅ Slices 2–3 |
+| `piv` | Reference-style skills (prime → plan-feature → execute → validate) | `docs/specs/<epic>.md` tickets (the reference's `/spec` output) | `.claude/plans/` = planned; `.claude/execution-reports/` ✓/✗ "Validation Results" = verdict | ✅ Slice 4 |
+
+The same live test suite (filing + sync lifecycle) runs against both engines' fixtures.
+
+**piv artifact ⇄ ticket linking (deviation):** the reference never records which ticket a plan or execution report
+belongs to (plans are named after the feature). An artifact belongs to a ticket when its file name starts with
+the ticket id or its filed Jira key (`ticket-1-…`, `sdlc-5-…`), or it has a `Ticket: TICKET-1` line. Merely
+mentioning a ticket ("depends on TICKET-1") does not link it. Our rewritten PIV skills (slice 6) will follow this.
 
 Mapping state is engine-neutral: `.sdlc/atlassian.json` (item id ⇄ issue key, page ids). Every filed story also
 carries a label `sdlc-item-<id>`, so re-runs stay idempotent even without the state file (e.g. another developer).
@@ -88,6 +95,7 @@ Mapping state lives in `.sdlc/atlassian.json`, with labels as a fallback, so eve
 | Engine choice | Its own skills only | `gsd` or `piv` | Teams can keep the reference's lighter loop or opt into GSD; the Jira/Confluence side is shared |
 | Duplicate check | Compares summaries with the epic's existing children | State file, then `sdlc-item-<id>` label, then summary match | Summaries get edited in Jira; labels and state survive that |
 | Reading GSD plans | n/a | Via `gsd-tools` (`roadmap analyze`, `roadmap get-phase`) rather than parsing markdown | Stays correct as GSD's format evolves |
+| Plan/report ⇄ ticket link (piv) | None: plans named after the feature | File-name prefix or `Ticket:` line | Needed to sync status; smallest convention that keeps the reference's layout |
 
 Flows may become configurable later, once we've seen how the team uses them.
 
@@ -101,7 +109,10 @@ Flows may become configurable later, once we've seen how the team uses them.
    `jira.transitions`), forward-only (never out of Done), verification report → `Verification: <KEY> <title>` page
    under the breakdown page, remote link + one comment per new/changed report. Triggered manually for now; slice 6
    wires it into GSD/skills.
-4. **`piv` engine adapter:** read/write the reference's `docs/specs/` and plan artifacts.
+4. ✅ **`piv` engine adapter** (2026-09-24; 63 tests total): reads `/spec` breakdowns (tolerant of the loose shapes
+   agents write), plans and execution reports. Hardened on a real 36-phase GSD roadmap: canonical phase ids
+   (`04.3` = `4.3`), conservative parsing of free-text "Depends on", non-fatal cycles, BOM-tolerant reads,
+   parallel `gsd-tools` calls.
 5. **Track B:** `import-story` / `import-bug` into GSD, and an RCA skill writing to Jira.
 6. **Skills:** portable SKILL.md wrappers (`/spec`, `/jira-sync`, `/rca`) and GSD hook points.
 7. **Cloud adapter.**
