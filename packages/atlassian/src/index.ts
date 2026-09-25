@@ -25,8 +25,9 @@ export function connect(opts?: Parameters<typeof loadConfig>[0]) {
   };
 }
 
-export { waves, type Breakdown, type Engine, type EngineName, type LoadOptions, type Verification, type WorkItem, type WorkStatus } from './work.ts';
+export { waves, type Breakdown, type Engine, type EngineName, type LoadOptions, type TicketProgress, type Verification, type WorkItem, type WorkStatus } from './work.ts';
 export { GsdEngine, PivEngine, resolveEngine, readSdlcConfig, type SdlcConfig } from './engines/index.ts';
 export { fileBreakdown, itemLabel, storyDescription, type FilingReport } from './filing.ts';
-export { StateFile, type BridgeState } from './state.ts';
-export { DEFAULT_TRANSITIONS, syncProgress, type SyncReport, type TransitionMap } from './sync.ts';
+export { StateFile, type BridgeState, type TicketState } from './state.ts';
+export { DEFAULT_TRANSITIONS, syncProgress, type SyncEntry, type SyncReport, type TransitionMap } from './sync.ts';
+export { acceptanceCriteria, escalateTicket, importTicket, publishRca, type ImportResult, type RcaReport } from './tickets.ts';

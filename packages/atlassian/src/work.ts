@@ -47,11 +47,18 @@ export type LoadOptions = {
   issueKeys?: Record<string, string>;
 };
 
+/** Progress of a Track B ticket (a single Jira story/bug worked outside any breakdown). */
+export type TicketProgress = { status: WorkStatus; verification?: Verification; artifacts: string[] };
+
 export interface Engine {
   readonly name: EngineName;
   /** True if `root` holds this engine's planning artifacts. */
   detect(root: string): boolean;
   loadBreakdown(root: string, opts?: LoadOptions): Promise<Breakdown>;
+  /** Progress of the work done for one Jira key (Track B), found via the engine's artifacts that name the key. */
+  ticketProgress(root: string, key: string): Promise<TicketProgress>;
+  /** What to run next for an imported ticket, shown in the ticket brief. */
+  nextSteps(key: string, summary: string, isBug: boolean): string[];
 }
 
 /**

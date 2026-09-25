@@ -62,6 +62,11 @@ export class JiraClient {
     return jiraWikiToMarkdown(issue.fields.description ?? '');
   }
 
+  /** Any wiki-markup field (e.g. a comment body) as markdown. */
+  static wikiToMarkdown(wiki: string): string {
+    return jiraWikiToMarkdown(wiki ?? '');
+  }
+
   /** Run a JQL search, following pagination. */
   async search(jql: string, opts: { fields?: string[]; limit?: number } = {}): Promise<JiraIssue[]> {
     const out: JiraIssue[] = [];

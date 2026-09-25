@@ -1,6 +1,6 @@
 // Test harness: the same scenarios run against every engine's fixture. Each case knows its fixture, item ids and
-// how to simulate "executed with gaps" / "passed" in that engine's own artifact format.
-import { writeFileSync } from 'node:fs';
+// how to simulate progress (planned / verified with gaps / passed) in that engine's own artifact format.
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findGsdTools, GsdEngine, PivEngine } from '../src/engines/index.ts';
@@ -15,9 +15,12 @@ export type EngineCase = {
   ids: [string, string, string];
   /** Verdict word the engine reports for a failed verification. */
   failedStatus: string;
-  /** Simulate item 2 executed and verified with problems / verified clean. */
+  /** Track A: simulate item 2 executed and verified with problems / verified clean. */
   failItem2: (root: string) => void;
   passItem2: (root: string) => void;
+  /** Track B: simulate work planned / executed + verified (passed) for a Jira key. */
+  planTicket: (root: string, key: string) => void;
+  passTicket: (root: string, key: string) => void;
 };
 
 const fixture = (name: string) => fileURLToPath(new URL(`./fixtures/${name}-project`, import.meta.url));
@@ -30,20 +33,40 @@ const gsdAvailable = (() => {
   }
 })();
 
-const gsdVerification = (root: string, status: string, score: string) => {
-  const dir = join(root, '.planning', 'phases', '02-export-ui');
-  writeFileSync(join(dir, '02-01-SUMMARY.md'), '---\nphase: 02-export-ui\nplan: 01\n---\n\n# Summary\n');
-  writeFileSync(
-    join(dir, '02-VERIFICATION.md'),
-    `---\nphase: 02-export-ui\nverified: 2026-09-24T12:00:00Z\nstatus: ${status}\nscore: ${score}\n---\n\n# Phase 2: Export UI Verification Report\n\n**Status:** ${status}\n`,
-  );
+const write = (dir: string, file: string, lines: string[]) => {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, file), lines.join('\n') + '\n');
 };
 
+// --- gsd -----------------------------------------------------------------------------------
+
+const gsdVerification = (root: string, status: string, score: string) => {
+  const dir = join(root, '.planning', 'phases', '02-export-ui');
+  write(dir, '02-01-SUMMARY.md', ['---', 'phase: 02-export-ui', 'plan: 01', '---', '', '# Summary']);
+  write(dir, '02-VERIFICATION.md', ['---', 'phase: 02-export-ui', 'verified: 2026-09-24T12:00:00Z', `status: ${status}`, `score: ${score}`, '---', '', '# Phase 2: Export UI Verification Report', '', `**Status:** ${status}`]);
+};
+
+// A GSD quick task started as "<KEY>: export button" gets a slug containing the key.
+const quickDir = (root: string, key: string) => join(root, '.planning', 'quick', `260924-001-${key.toLowerCase()}-export-button`);
+
+// --- piv -----------------------------------------------------------------------------------
+
 const pivReport = (root: string, unit: string) =>
-  writeFileSync(
-    join(root, '.claude', 'execution-reports', 'ticket-2-export-ui.md'),
-    `# Execution Report: Export UI\n\n### Validation Results\n\n- Syntax & Linting: ✓\n- Type Checking: ✓\n- Unit Tests: ${unit}\n\n### What Went Well\n\n- Button renders.\n`,
-  );
+  write(join(root, '.claude', 'execution-reports'), 'ticket-2-export-ui.md', [
+    '# Execution Report: Export UI',
+    '',
+    '### Validation Results',
+    '',
+    '- Syntax & Linting: ✓',
+    '- Type Checking: ✓',
+    `- Unit Tests: ${unit}`,
+    '',
+    '### What Went Well',
+    '',
+    '- Button renders.',
+  ]);
+
+const pivName = (key: string) => `${key.toLowerCase()}-export-button.md`;
 
 export const ENGINE_CASES: EngineCase[] = [
   {
@@ -55,6 +78,11 @@ export const ENGINE_CASES: EngineCase[] = [
     failedStatus: 'gaps_found',
     failItem2: (root) => gsdVerification(root, 'gaps_found', '1/2 must-haves verified'),
     passItem2: (root) => gsdVerification(root, 'passed', '2/2 must-haves verified'),
+    planTicket: (root, key) => write(quickDir(root, key), '260924-001-PLAN.md', [`# Quick task: ${key} export button`]),
+    passTicket: (root, key) => {
+      write(quickDir(root, key), '260924-001-SUMMARY.md', ['---', 'status: complete', '---', '', '# Summary']);
+      write(quickDir(root, key), '260924-001-VERIFICATION.md', ['---', 'status: passed', 'score: 2/2 must-haves verified', '---', '', '# Quick task verification', '', 'All good.']);
+    },
   },
   {
     name: 'piv',
@@ -65,5 +93,8 @@ export const ENGINE_CASES: EngineCase[] = [
     failedStatus: 'failed',
     failItem2: (root) => pivReport(root, '✗ 11 passed, 2 failed'),
     passItem2: (root) => pivReport(root, '✓ 13 passed, 0 failed'),
+    planTicket: (root, key) => write(join(root, '.claude', 'plans'), pivName(key), [`# Feature: ${key} export button`]),
+    passTicket: (root, key) =>
+      write(join(root, '.claude', 'execution-reports'), pivName(key), ['# Execution Report', '', '### Validation Results', '', '- Lint: ✓', '- Unit Tests: ✓ 9 passed']),
   },
 ];

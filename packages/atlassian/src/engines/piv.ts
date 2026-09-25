@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { readText } from './text.ts';
-import type { Breakdown, Engine, LoadOptions, Verification, WorkItem, WorkStatus } from '../work.ts';
+import type { Breakdown, Engine, LoadOptions, TicketProgress, Verification, WorkItem, WorkStatus } from '../work.ts';
 
 /**
  * Reference-style engine ("PIV": prime → plan-feature → execute → validate), reading the artifacts the
@@ -51,6 +51,33 @@ export class PivEngine implements Engine {
     });
     return { engine: 'piv', title: spec.title, overview: spec.summary, items };
   }
+
+  async ticketProgress(root: string, key: string): Promise<TicketProgress> {
+    const plan = artifacts(root, join('.claude', 'plans')).filter((a) => belongsTo(a, [key]));
+    const reports = artifacts(root, join('.claude', 'execution-reports')).filter((a) => belongsTo(a, [key]));
+    const verification = reports.length ? executionVerdict(reports.at(-1)!) : undefined;
+    return { status: statusOf(plan.length > 0, verification), verification, artifacts: [...plan, ...reports].map((a) => a.rel) };
+  }
+
+  nextSteps(key: string, summary: string, isBug: boolean): string[] {
+    const slug = `${key.toLowerCase()}-${slugify(summary)}`;
+    return [
+      ...(isBug
+        ? [`\`/rca ${key}\`: root cause -> \`docs/rca/${key}.md\`, then \`sdlc-atl publish-rca ${key}\``, `\`/implement-fix ${key}\`: fix + regression test (+ a rule, so the class of bug can't recur)`]
+        : [`\`/prime ${key}\`, then \`/plan-feature\`: save the plan as \`.claude/plans/${slug}.md\``, '`/execute` the plan, then `/validate`']),
+      `\`/execution-report\`: save as \`.claude/execution-reports/${slug}.md\` (its ✓/✗ results are the verdict)`,
+      '`sdlc-atl sync`: moves the Jira issue and publishes the report',
+    ];
+  }
+}
+
+export function slugify(s: string, max = 40): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, max)
+    .replace(/-$/, '');
 }
 
 type Artifact = { rel: string; name: string; text: string };

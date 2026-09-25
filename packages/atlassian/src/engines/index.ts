@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Engine, EngineName, WorkStatus } from '../work.ts';
-import { GsdEngine } from './gsd.ts';
+import { findGsdTools, GsdEngine } from './gsd.ts';
 import { PivEngine } from './piv.ts';
 
 export { GsdEngine, findGsdTools, parseDependsOn, parseRequirements, readVerification } from './gsd.ts';
@@ -28,8 +28,24 @@ const factories: Record<EngineName, (cfg: SdlcConfig) => Engine> = {
   piv: (cfg) => new PivEngine({ spec: cfg.spec }),
 };
 
-/** Resolve the engine: explicit name, then `.sdlc/config.json` "engine", then auto-detect (GSD first). */
-export function resolveEngine(root: string, name?: string): Engine {
+/**
+ * Resolve the engine: explicit name, then `.sdlc/config.json` "engine", then auto-detect (GSD first). With
+ * `fallback`, a repo without planning artifacts (typical for Track B) gets GSD when it's installed, else piv.
+ */
+export function resolveEngine(root: string, name?: string, opts: { fallback?: boolean } = {}): Engine {
+  if (opts.fallback) {
+    try {
+      return resolveEngine(root, name);
+    } catch (e) {
+      if (name || readSdlcConfig(root).engine) throw e;
+      try {
+        findGsdTools(root);
+        return new GsdEngine();
+      } catch {
+        return new PivEngine();
+      }
+    }
+  }
   const cfg = readSdlcConfig(root);
   const configured = name ?? cfg.engine;
   if (configured) {

@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { readText } from './text.ts';
-import type { Breakdown, Engine, Verification, WorkItem, WorkStatus } from '../work.ts';
+import type { Breakdown, Engine, TicketProgress, Verification, WorkItem, WorkStatus } from '../work.ts';
 
 const run = promisify(execFile);
 
@@ -22,6 +22,20 @@ export class GsdEngine implements Engine {
 
   constructor(opts: { gsdTools?: string } = {}) {
     this.toolsPath = opts.gsdTools;
+  }
+
+  ticketProgress(root: string, key: string) {
+    return gsdTicketProgress(root, key);
+  }
+
+  nextSteps(key: string, summary: string, isBug: boolean): string[] {
+    // The quick task's description starts with the key, so its directory slug contains it (that's the link).
+    return [
+      ...(isBug ? [`\`/rca ${key}\`: root cause -> \`docs/rca/${key}.md\`, then \`sdlc-atl publish-rca ${key}\``] : []),
+      `\`/gsd-quick --validate "${key}: ${isBug ? 'fix ' : ''}${summary.replace(/"/g, "'")}"\`, pointing the planner at \`.sdlc/tickets/${key}.md\``,
+      ...(isBug ? ['The fix must add a regression test (and a rule, so the class of bug cannot recur)'] : []),
+      '`sdlc-atl sync`: moves the Jira issue and publishes the verification',
+    ];
   }
 
   detect(root: string) {
@@ -60,6 +74,44 @@ export class GsdEngine implements Engine {
       items,
     };
   }
+}
+
+/**
+ * Track B progress for a Jira key from GSD quick tasks: `.planning/quick/<quick_id>-<slug>/`, where the slug comes
+ * from the task description, so a task started as "SDLC-5: …" lands in a dir containing "sdlc-5". A task dir also
+ * counts when its CONTEXT/PLAN has a "Ticket: SDLC-5" line.
+ *   <id>-PLAN.md -> planned; <id>-SUMMARY.md -> executing, or complete when its front matter says
+ *   `status: complete` and no verification ran; <id>-VERIFICATION.md -> its verdict wins.
+ */
+export async function gsdTicketProgress(root: string, key: string): Promise<TicketProgress> {
+  const quick = join(root, '.planning', 'quick');
+  if (!existsSync(quick)) return { status: 'not_started', artifacts: [] };
+  const k = key.toLowerCase();
+  const ticketLine = new RegExp(`^\\**ticket\\**:?\\**\\s*${key.replace(/[-]/g, '\\-')}\\b`, 'im');
+  const dirs = readdirSync(quick, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name)
+    .filter((name) => {
+      if (new RegExp(`(^|-)${k.replace(/[-]/g, '\\-')}(-|$)`).test(name.toLowerCase())) return true;
+      return readdirSync(join(quick, name))
+        .filter((f) => /-(CONTEXT|PLAN)\.md$/.test(f))
+        .some((f) => ticketLine.test(readText(join(quick, name, f))));
+    })
+    .sort();
+  const dir = dirs.at(-1);
+  if (!dir) return { status: 'not_started', artifacts: [] };
+
+  const rel = `.planning/quick/${dir}`;
+  const files = readdirSync(join(quick, dir)).sort();
+  const artifacts = files.filter((f) => f.endsWith('.md')).map((f) => `${rel}/${f}`);
+  const verification = readVerification(root, rel);
+  if (verification) return { status: verification.status === 'passed' ? 'complete' : 'needs_attention', verification, artifacts };
+  const summary = files.find((f) => f.endsWith('-SUMMARY.md'));
+  if (summary) {
+    const done = /^status:\s*complete\s*$/m.test(readText(join(quick, dir, summary)).split(/\n---/)[0] ?? '');
+    return { status: done ? 'complete' : 'executing', artifacts };
+  }
+  return { status: files.some((f) => f.endsWith('-PLAN.md')) ? 'planned' : 'discussed', artifacts };
 }
 
 /** GSD writes the same phase as "04.3" and "4.3"; use one form for ids and dependencies. */

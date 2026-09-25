@@ -6,6 +6,17 @@ export type BridgeState = {
   epic?: string;
   breakdownPageId?: string;
   items: Record<string, { issueKey: string; verificationPageId?: string }>;
+  /** Track B tickets imported with `sdlc-atl import`, by Jira key. */
+  tickets?: Record<string, TicketState>;
+};
+
+export type TicketState = {
+  type?: string;
+  summary?: string;
+  engine?: string;
+  verificationPageId?: string;
+  rcaPageId?: string;
+  escalatedTo?: string;
 };
 
 export class StateFile {
