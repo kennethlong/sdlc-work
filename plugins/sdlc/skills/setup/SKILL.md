@@ -40,6 +40,15 @@ Never print token values or commit this file. On Windows, check it wasn't saved 
 (Notepad adds `.txt`). Then check: `sdlc-atl whoami`. Inside a repo that has sdlc-work's local test stack,
 `SDLC_ATLASSIAN_ENV=user` makes the tools use this file instead.
 
+**Git hosting** (for `/sdlc:pr` and `/sdlc:review`; the host is detected from the `origin` remote):
+
+```
+BITBUCKET_BASE_URL=https://bitbucket.example.com     # Bitbucket Data Center
+BITBUCKET_TOKEN=<HTTP access token, repo write>      # Profile → Manage account → HTTP access tokens
+GITHUB_TOKEN=<token>                                  # or just be logged in with the gh CLI
+GITHUB_HOST=github.example.com                       # GitHub Enterprise only
+```
+
 Bug handling (`/sdlc:rca`) needs a **Bug** issue type in the project; team-managed Cloud projects may not have
 one until you add it (Project settings → Issue types).
 

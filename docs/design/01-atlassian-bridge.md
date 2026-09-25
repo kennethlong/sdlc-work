@@ -95,6 +95,11 @@ Mapping state lives in `.sdlc/atlassian.json`, with labels as a fallback, so eve
 | Learning loop | Stated principle ("every bug → rule + regression test") | `publish-rca` warns when the RCA names no regression test or prevention rule | Makes the loop checkable instead of aspirational |
 | Distribution | Copy `.claude/` into each repo | Plugin (marketplace) + `install.ps1` for other agents; skills namespaced `/sdlc:*` | Versioned, one-command install and updates; portable across agents |
 | Automation | Manual skill invocation | git post-commit hook runs `sync` | Status follows the work without anyone remembering; agent-agnostic |
+| Review scope | `git diff HEAD` (uncommitted only) | `base...HEAD`, uncommitted listed separately | The reference's review missed everything already committed on the branch |
+| Review passes | One pass (bugs, security, perf, quality, standards) | Pass 1: does it meet the ticket's acceptance criteria; pass 2: the reference's checklist | Spec compliance first (superpowers' two-stage review); a correct-but-wrong-feature change is the costliest miss |
+| Review output | `.claude/code-reviews/*.md`, one PR comment on GitHub | Parseable `.sdlc/reviews/*.md`; one PR comment updated in place, Bitbucket Code Insights annotations, Jira verdict, `--gate` | Machine-readable findings let CI gate and Jira reflect review state |
+| PR creation | Not done ("create pull request (if applicable)") | `sdlc-atl pr`, after user confirmation | Links PR ⇄ Jira deterministically; team works in Bitbucket DC and GitHub |
+| When is it Done | "Ship" after PR review | Default: verified; optional `doneWhen: merged` | Teams without PR gates keep today's behaviour; PR-gated teams get the reference's order |
 | Execution report location | `.claude/execution-reports/[feature].md` | `.claude/execution-reports/<ticket>-<slug>.md` | Same folder; the ticket prefix is what links the verdict to Jira |
 | Small work | Implicit: any ticket can enter the PIV loop | Explicit Track B with escalation to Track A | Makes "does this need a PRD?" a deliberate decision instead of drift |
 | Ticket slicing | Agent slices the PRD directly into tickets | `gsd` engine: slices via GSD ROADMAP (`granularity: fine`), then files phases as tickets. `piv` engine: as the reference | One source for the plan: tickets mirror GSD phases, so status can sync back mechanically |
@@ -139,6 +144,13 @@ Flows may become configurable later, once we've seen how the team uses them.
    both engines (the bug/RCA scenario skips when a project has no Bug type). Confirmed on Cloud: issue-link direction
    matches DC; Epic Name not required; CQL search indexing lags ~40s (vs <1s on DC); Cloud omits `fields` when no
    requested field has a value.
+8. ✅ **PR + code review, GitHub and Bitbucket Data Center** (2026-09-25; 108 tests total). Host from the `origin`
+   remote. `sdlc-atl review-scope` (base...HEAD + uncommitted listed separately), `sdlc-atl pr` (create/update the
+   PR titled "KEY: summary", body with Jira + verification links, Jira remote link + comment, optional review
+   status), `sdlc-atl publish-review FILE [--gate]` (one PR comment updated in place; Bitbucket Code Insights report +
+   line annotations; Jira verdict comment). Skills `review`, `review-fix`, `pr`; CI templates for GitHub Actions and
+   Jenkins (untested). `jira.doneWhen: "merged"` keeps verified work out of Done until its PR merges. Bitbucket DC
+   runs in the local stack with unattended setup; GitHub is verified against contract fakes (live needs a repo).
 
 ## DC notes
 

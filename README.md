@@ -4,7 +4,7 @@ A toolset of AI agent skills, subagents, hooks, and scripts covering the full so
 lifecycle, built on Claude Code and portable Agent Skills. It started from
 [`ai-native-starter-pack`](https://github.com/coleam00/ai-native-starter-pack).
 
-**Status:** Atlassian bridge slices 1–7 done (verified live on Data Center and Atlassian Cloud): CLI + library, agent tools (MCP), Track A (PRD → tickets → progress back), Track B (tickets, bug RCAs), engine = GSD or reference-style PIV, and a Claude Code plugin with 12 portable skills + auto-sync git hook.
+**Status:** slices 1–8 done: Jira/Confluence (DC + Cloud, verified live), Track A/B, GSD or PIV engine, a Claude Code plugin with 15 portable skills + auto-sync git hook, and PR + code review on GitHub and Bitbucket Data Center.
 
 ## Quick start
 
@@ -29,10 +29,11 @@ Then run `/sdlc:setup` in a repo. See [plugins/sdlc/README.md](plugins/sdlc/READ
 | Path | What |
 |---|---|
 | `packages/atlassian` | Jira/Confluence DC client (markdown in/out) and the `sdlc-atl` CLI: `whoami`, `breakdown`, `file-breakdown --epic KEY --prd PAGE_ID [--dry-run]`, `sync [--dry-run]`, Track B: `import KEY`, `publish-rca KEY`, `escalate KEY --epic E` |
-| `plugins/sdlc` | The Claude Code plugin: 12 skills, bundled CLI (`bin/sdlc-atl.mjs`) and MCP launcher |
+| `plugins/sdlc` | The Claude Code plugin: 15 skills, bundled CLI (`bin/sdlc-atl.mjs`) and MCP launcher |
 | `scripts/install.ps1` | Install for other agents: CLI on PATH, skills in `~/.agents/skills` |
 | `scripts/mcp-atlassian.mjs` | Launches [mcp-atlassian](https://github.com/sooperset/mcp-atlassian) against the configured DC instances; wired in `.mcp.json` |
-| `infra/atlassian-dc` | One-command local Jira + Confluence DC (`./dc.ps1 up`) |
+| `infra/atlassian-dc` | One-command local Jira + Confluence + Bitbucket DC (`./dc.ps1 up`) |
+| `templates/ci` | CI review templates: GitHub Actions, Jenkins for Bitbucket DC (untested) |
 | `docs/` | Research and design |
 
 ## Develop

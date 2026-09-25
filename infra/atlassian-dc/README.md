@@ -7,9 +7,10 @@ Jira/Confluence bridge against the same product type that work runs.
 |---|---|---|
 | Jira Software | http://jira.localhost:8080 | 10.3.25 (LTS) |
 | Confluence | http://confluence.localhost:8090 | 10.2.18 (LTS) |
+| Bitbucket DC | http://bitbucket.localhost:7990 | 9.4.24 (LTS), project `SDLC`, repo `sandbox` |
 | Postgres 16 | localhost:5433 (host), `postgres:5432` (in network) | |
 
-All ports bind to 127.0.0.1 only. The apps need about 8 GB of RAM together. Requires Docker Desktop and Node 22+.
+All ports bind to 127.0.0.1 only. The apps need about 10 GB of RAM together. Requires Docker Desktop and Node 22+.
 
 ## One command
 
@@ -23,7 +24,9 @@ Unattended, from nothing to ready:
 2. starts Postgres, Jira, and Confluence and waits for them,
 3. runs both setup wizards with Playwright (headless): license, admin account, email/content/user-management choices,
 4. creates Jira project `SDLC` (Scrum) and Confluence space `SDLC`,
-5. creates an admin Personal Access Token in each app.
+5. creates an admin Personal Access Token in each app,
+6. Bitbucket DC sets itself up from environment variables (no wizard); setup adds project `SDLC`, repo `sandbox`
+   and an HTTP access token (`BITBUCKET_TOKEN`).
 
 Everything it generates goes into `.env`: `JIRA_ADMIN_USER/PASSWORD`, `CONFLUENCE_ADMIN_USER/PASSWORD`,
 `JIRA_PAT`, `CONFLUENCE_PAT`, `*_LICENSE_KEY`, `*_BASE_URL`. It is idempotent: re-running `./dc.ps1 up` or

@@ -31,6 +31,9 @@ Then `/sdlc:setup` (credentials in `~/.sdlc/atlassian.env`, engine, git hook).
 | `rca` | B | bug root cause → `docs/rca/<KEY>.md` (with regression test + prevention rule) → Confluence + bug |
 | `fix` | B | regression test first → fix → rule → sweep → validate |
 | `sync` | both | Jira status + Confluence verification reports from the work's progress |
+| `review` | both | whole-branch review (acceptance criteria, then bugs/security/perf/tests/standards), verified findings → PR comment, Bitbucket annotations, Jira |
+| `review-fix` | both | fix findings most-severe first, each with a test; re-review |
+| `pr` | both | open/update the PR (GitHub or Bitbucket DC) titled from Jira, linked from Jira |
 | `prime`, `plan`, `execute`, `validate`, `report` | piv engine | the reference-style loop; artifacts named `<ticket>-<slug>.md` so progress links to Jira |
 
 With GSD as the engine, GSD's own commands do the planning and execution (`/gsd-*`); these skills handle the
