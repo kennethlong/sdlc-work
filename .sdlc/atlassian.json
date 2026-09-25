@@ -1,0 +1,135 @@
+{
+  "items": {
+    "S-1": {
+      "issueKey": "SCRUM-147"
+    },
+    "S-2": {
+      "issueKey": "SCRUM-148"
+    },
+    "S-3": {
+      "issueKey": "SCRUM-149"
+    },
+    "S-4": {
+      "issueKey": "SCRUM-150"
+    },
+    "S-5": {
+      "issueKey": "SCRUM-151"
+    },
+    "S-6": {
+      "issueKey": "SCRUM-152"
+    },
+    "S-7": {
+      "issueKey": "SCRUM-153"
+    },
+    "S-8": {
+      "issueKey": "SCRUM-154"
+    },
+    "F-1": {
+      "issueKey": "SCRUM-155"
+    },
+    "T-8": {
+      "issueKey": "SCRUM-156"
+    },
+    "T-9": {
+      "issueKey": "SCRUM-157"
+    },
+    "F-2": {
+      "issueKey": "SCRUM-158"
+    },
+    "F-3": {
+      "issueKey": "SCRUM-159"
+    },
+    "F-4": {
+      "issueKey": "SCRUM-160"
+    },
+    "F-6": {
+      "issueKey": "SCRUM-161"
+    },
+    "F-7": {
+      "issueKey": "SCRUM-162"
+    },
+    "F-8": {
+      "issueKey": "SCRUM-163"
+    },
+    "D-1": {
+      "issueKey": "SCRUM-164"
+    },
+    "H-1": {
+      "issueKey": "SCRUM-165"
+    },
+    "H-2": {
+      "issueKey": "SCRUM-166"
+    },
+    "T-1": {
+      "issueKey": "SCRUM-167"
+    },
+    "T-5": {
+      "issueKey": "SCRUM-168"
+    },
+    "T-6": {
+      "issueKey": "SCRUM-169"
+    },
+    "T-7": {
+      "issueKey": "SCRUM-170"
+    },
+    "F-5": {
+      "issueKey": "SCRUM-171"
+    },
+    "H-3": {
+      "issueKey": "SCRUM-172"
+    },
+    "T-2": {
+      "issueKey": "SCRUM-173"
+    },
+    "T-3": {
+      "issueKey": "SCRUM-174"
+    },
+    "T-4": {
+      "issueKey": "SCRUM-175"
+    },
+    "P-1": {
+      "issueKey": "SCRUM-176"
+    },
+    "D-9": {
+      "issueKey": "SCRUM-177"
+    },
+    "H-4": {
+      "issueKey": "SCRUM-178"
+    },
+    "D-2": {
+      "issueKey": "SCRUM-179"
+    },
+    "D-3": {
+      "issueKey": "SCRUM-180"
+    },
+    "D-4": {
+      "issueKey": "SCRUM-181"
+    },
+    "D-6": {
+      "issueKey": "SCRUM-182"
+    },
+    "D-7": {
+      "issueKey": "SCRUM-183"
+    },
+    "D-8": {
+      "issueKey": "SCRUM-184"
+    },
+    "D-10": {
+      "issueKey": "SCRUM-185"
+    },
+    "D-11": {
+      "issueKey": "SCRUM-186"
+    },
+    "D-12": {
+      "issueKey": "SCRUM-187"
+    },
+    "D-13": {
+      "issueKey": "SCRUM-188"
+    },
+    "D-5": {
+      "issueKey": "SCRUM-189"
+    }
+  },
+  "breakdownPageId": "491549",
+  "epic": "SCRUM-146"
+}
