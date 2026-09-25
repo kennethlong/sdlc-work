@@ -150,7 +150,8 @@ Flows may become configurable later, once we've seen how the team uses them.
    status), `sdlc-atl publish-review FILE [--gate]` (one PR comment updated in place; Bitbucket Code Insights report +
    line annotations; Jira verdict comment). Skills `review`, `review-fix`, `pr`; CI templates for GitHub Actions and
    Jenkins (untested). `jira.doneWhen: "merged"` keeps verified work out of Done until its PR merges. Bitbucket DC
-   runs in the local stack with unattended setup; GitHub is verified against contract fakes (live needs a repo).
+   runs in the local stack with unattended setup and is verified live; GitHub is verified live against a private test
+   repo (opt-in suite: `SDLC_GITHUB_TEST_REPO=owner/repo`).
 
 ## DC notes
 
