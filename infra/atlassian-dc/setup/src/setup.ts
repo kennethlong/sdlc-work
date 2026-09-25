@@ -57,7 +57,7 @@ const apps: App[] = [
     product: 'Confluence Data Center',
     wizard: confluenceWizard,
     createPat: (b, u, a) => createPatViaLogin(b, u, a, 'sdlc-work'),
-    ensureContainer: (u, auth) => ensureConfluenceSpace(u, auth, 'SDLC', 'SDLC Sandbox'),
+    ensureContainer: (u, auth) => ensureConfluenceSpace(u, auth, 'SDLC', 'SDLC'),
     containerLabel: 'space SDLC',
   },
 ];
