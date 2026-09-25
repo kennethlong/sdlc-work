@@ -4,7 +4,7 @@ A toolset of AI agent skills, subagents, hooks, and scripts covering the full so
 lifecycle, built on Claude Code and portable Agent Skills. It started from
 [`ai-native-starter-pack`](https://github.com/coleam00/ai-native-starter-pack).
 
-**Status:** building slice 1 of the Atlassian bridge. Local Jira/Confluence DC stack in `infra/`.
+**Status:** Atlassian bridge slices 1–2 done (client, agent tools, filing a GSD roadmap as Jira stories + Confluence breakdown). Local Jira/Confluence DC stack in `infra/`.
 
 ## Docs
 
@@ -16,7 +16,7 @@ lifecycle, built on Claude Code and portable Agent Skills. It started from
 
 | Path | What |
 |---|---|
-| `packages/atlassian` | TypeScript Jira/Confluence DC client (markdown in/out), basis for the GSD bridge |
+| `packages/atlassian` | Jira/Confluence DC client (markdown in/out) and the `sdlc-atl` CLI: `whoami`, `breakdown`, `file-breakdown --epic KEY --prd PAGE_ID [--dry-run]` |
 | `scripts/mcp-atlassian.mjs` | Launches [mcp-atlassian](https://github.com/sooperset/mcp-atlassian) against the configured DC instances; wired in `.mcp.json` |
 | `infra/atlassian-dc` | One-command local Jira + Confluence DC (`./dc.ps1 up`) |
 | `docs/` | Research and design |

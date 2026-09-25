@@ -61,6 +61,13 @@ describe.skipIf(!cfg.jira)('Jira DC', () => {
     expect(await jira.transitionTo(story, 'No Such Status')).toBe(false);
   });
 
+  it('links issues in the stated direction', async () => {
+    await jira.linkIssues('Blocks', epic, story); // "epic blocks story"
+    const links = (await jira.getIssue(story, 'issuelinks'))!.fields.issuelinks as { type: { inward: string }; inwardIssue?: { key: string } }[];
+    // Seen from the story: "<story> is blocked by <epic>".
+    expect(links).toContainEqual(expect.objectContaining({ type: expect.objectContaining({ inward: 'is blocked by' }), inwardIssue: expect.objectContaining({ key: epic }) }));
+  });
+
   it('comments in markdown and adds remote links', async () => {
     await jira.addComment(story, 'Verified: **all green**');
     const comments = await jira.comments(story);

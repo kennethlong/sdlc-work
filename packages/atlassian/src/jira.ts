@@ -137,9 +137,13 @@ export class JiraClient {
       .then((r) => r.comments);
   }
 
-  /** e.g. linkIssues('Blocks', 'A-1', 'A-2') => A-1 blocks A-2. */
-  async linkIssues(type: string, outwardKey: string, inwardKey: string) {
-    await this.http.post('/rest/api/2/issueLink', { type: { name: type }, outwardIssue: { key: outwardKey }, inwardIssue: { key: inwardKey } });
+  /**
+   * linkIssues('Blocks', 'A-1', 'A-2') => "A-1 blocks A-2".
+   * Counter-intuitively, the REST body's `inwardIssue` is the subject of the *outward* verb (verified on DC 10.3:
+   * posting outwardIssue=A, inwardIssue=B yields "B blocks A").
+   */
+  async linkIssues(type: string, subjectKey: string, objectKey: string) {
+    await this.http.post('/rest/api/2/issueLink', { type: { name: type }, inwardIssue: { key: subjectKey }, outwardIssue: { key: objectKey } });
   }
 
   /** Remote ("web") link on an issue, idempotent by globalId (e.g. a Confluence page or a PR). */

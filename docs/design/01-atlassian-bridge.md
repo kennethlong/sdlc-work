@@ -10,6 +10,20 @@ Status: flow agreed 2026-09-24. Targets Jira Software DC 10.3 and Confluence DC 
 | **Agent tools** | [`mcp-atlassian`](https://github.com/sooperset/mcp-atlassian) (MIT, DC + PAT) launched by `scripts/mcp-atlassian.mjs` | Ad-hoc "read this ticket / search Confluence" for any MCP-capable agent. Already solved, so we don't rebuild it |
 | **Bridge** (`packages/atlassian`) | Typed DC client plus deterministic steps between Confluence/Jira and GSD `.planning/` | Repeatable, idempotent operations shouldn't depend on an LLM choosing tools |
 
+## Planning engine is an option
+
+`engine: gsd | piv` (in `.sdlc/config.json`, or `--engine`; auto-detected from `.planning/ROADMAP.md` vs
+`docs/specs/`). The Jira/Confluence side works on an engine-neutral **work breakdown** (items with title, goal,
+acceptance criteria, requirement ids, dependencies, status); each engine has an adapter that produces it.
+
+| Engine | Planning/execution | Breakdown source | Status |
+|---|---|---|---|
+| `gsd` | GSD Core (discuss → plan → execute → verify) | `.planning/ROADMAP.md` phases, read through `gsd-tools` | Slice 2 |
+| `piv` | Reference-style skills (prime → plan-feature → execute → validate) | `docs/specs/<epic>.md` tickets (the reference's `/spec` output) | Follow-up slice |
+
+Mapping state is engine-neutral: `.sdlc/atlassian.json` (item id ⇄ issue key, page ids). Every filed story also
+carries a label `sdlc-item-<id>`, so re-runs stay idempotent even without the state file (e.g. another developer).
+
 ## Flow: follows the reference, in two tracks
 
 The reference ([`ai-native-starter-pack`](../../../ai-native-starter-pack), see its `/spec` skill and
@@ -60,7 +74,7 @@ Use it when the work fits one ticket: one PIV loop, no stakeholder review.
 | PRD child page "Spec: … Ticket Breakdown" | ROADMAP phases, dependency graph, waves |
 | Confluence child page per verified story | Phase VERIFICATION report |
 
-Mapping state (issue key ⇄ phase dir, page ids) lives in `.planning/atlassian.json` so every step is re-runnable.
+Mapping state lives in `.sdlc/atlassian.json`, with labels as a fallback, so every step is re-runnable.
 
 ## Deviations from the reference
 
@@ -70,19 +84,23 @@ Mapping state (issue key ⇄ phase dir, page ids) lives in `.planning/atlassian.
 | Status back to Jira | None: ends at the GitHub PR | Transitions + Confluence verification reports | The team lives in Jira/Confluence. Progress should be visible there without asking an engineer |
 | Bug intake | GitHub Issues (`gh issue view`) | Jira Bugs | The team tracks bugs in Jira |
 | Small work | Implicit: any ticket can enter the PIV loop | Explicit Track B with escalation to Track A | Makes "does this need a PRD?" a deliberate decision instead of drift |
-| Ticket slicing | Agent slices the PRD directly into tickets | Slices via GSD ROADMAP (`granularity: fine`), then files phases as tickets | One source for the plan: tickets mirror GSD phases, so status can sync back mechanically |
+| Ticket slicing | Agent slices the PRD directly into tickets | `gsd` engine: slices via GSD ROADMAP (`granularity: fine`), then files phases as tickets. `piv` engine: as the reference | One source for the plan: tickets mirror GSD phases, so status can sync back mechanically |
+| Engine choice | Its own skills only | `gsd` or `piv` | Teams can keep the reference's lighter loop or opt into GSD; the Jira/Confluence side is shared |
+| Duplicate check | Compares summaries with the epic's existing children | State file, then `sdlc-item-<id>` label, then summary match | Summaries get edited in Jira; labels and state survive that |
+| Reading GSD plans | n/a | Via `gsd-tools` (`roadmap analyze`, `roadmap get-phase`) rather than parsing markdown | Stays correct as GSD's format evolves |
 
 Flows may become configurable later, once we've seen how the team uses them.
 
 ## Slices
 
 1. ✅ **Client + agent tools** (2026-09-24; 9 unit + 9 live tests).
-2. **Track A ticket filing:** `file-roadmap` (phases → stories under the epic, idempotent) and publishing the
-   breakdown page under the PRD.
+2. ✅ **Track A ticket filing (gsd engine)** (2026-09-24; 34 tests total): `sdlc-atl file-breakdown` (items → stories under the epic, dependency
+   links, idempotent, `--dry-run`) and publishing the breakdown page under the PRD.
 3. **Report back:** `sync` (status transitions, verification pages, links) via `.planning/atlassian.json`.
-4. **Track B:** `import-story` / `import-bug` into GSD, and an RCA skill writing to Jira.
-5. **Skills:** portable SKILL.md wrappers (`/spec`, `/jira-sync`, `/rca`) and GSD hook points.
-6. **Cloud adapter.**
+4. **`piv` engine adapter:** read/write the reference's `docs/specs/` and plan artifacts.
+5. **Track B:** `import-story` / `import-bug` into GSD, and an RCA skill writing to Jira.
+6. **Skills:** portable SKILL.md wrappers (`/spec`, `/jira-sync`, `/rca`) and GSD hook points.
+7. **Cloud adapter.**
 
 ## DC notes
 

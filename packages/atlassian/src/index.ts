@@ -24,3 +24,8 @@ export function connect(opts?: Parameters<typeof loadConfig>[0]) {
     },
   };
 }
+
+export { waves, type Breakdown, type Engine, type EngineName, type WorkItem, type WorkStatus } from './work.ts';
+export { GsdEngine, resolveEngine, readSdlcConfig, type SdlcConfig } from './engines/index.ts';
+export { fileBreakdown, itemLabel, storyDescription, type FilingReport } from './filing.ts';
+export { StateFile, type BridgeState } from './state.ts';
