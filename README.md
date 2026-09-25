@@ -20,6 +20,8 @@ Then run `/sdlc:setup` in a repo. See [plugins/sdlc/README.md](plugins/sdlc/READ
 
 ## Docs
 
+- [TODO](TODO.md): the ranked work list from the crew review
+
 - [01 – Starter pack assessment](docs/research/01-starter-pack-assessment.md): what the pack covers, defects, what to keep
 - [02 – Landscape](docs/research/02-landscape.md): Spec Kit, BMAD, GSD, OpenSpec, Kiro, superpowers, and more; building blocks; gaps
 - [04 – Crew review](docs/research/04-crew-review.md): four-lens review vs the reference, bugs, ranked recommendations
