@@ -117,9 +117,10 @@ describe.skipIf(!cfg.confluence)('Confluence DC', () => {
     expect(md).toMatch(/\|\s*tests\s*\|\s*pass\s*\|/);
   });
 
-  it('finds pages by CQL (search index is async)', async () => {
+  // Search indexing is async: well under a second on DC, ~40s measured on Cloud.
+  it('finds pages by CQL (search index is async)', { timeout: 180_000 }, async () => {
     await expect
-      .poll(async () => (await confluence.search(`space = ${SPACE} AND title = "${title}"`)).map((p) => p.id), { timeout: 30_000, interval: 1000 })
+      .poll(async () => (await confluence.search(`space = ${SPACE} AND title = "${title}"`)).map((p) => p.id), { timeout: 150_000, interval: 3000 })
       .toContain(pageId);
   });
 });

@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { connect, ConfluenceClient, escalateTicket, importTicket, JiraClient, loadConfig, publishRca, resolveEngine, StateFile, syncProgress } from '../src/index.ts';
-import { ENGINE_CASES } from './engines.ts';
+import { ENGINE_CASES, TEST_PROJECT, TEST_SPACE } from './engines.ts';
 
 const cfg = loadConfig();
 
@@ -20,12 +20,13 @@ describe.each(ENGINE_CASES)('Track B (live, $name engine)', (ec) => {
   let root: string;
   let story = '';
   let bug = '';
+  let hasBug = true;
   const created: string[] = [];
   const pages: string[] = [];
 
   const state = () => new StateFile(root);
   const sync = () =>
-    syncProgress({ jira, confluence, root, state: state(), engineFor: (name) => resolveEngine(root, name ?? ec.name), confluenceSpace: 'SDLC' });
+    syncProgress({ jira, confluence, root, state: state(), engineFor: (name) => resolveEngine(root, name ?? ec.name), confluenceSpace: TEST_SPACE });
   const status = async (key: string) => (await jira.getIssue(key, 'status'))!.fields.status!.name;
 
   beforeAll(async () => {
@@ -33,13 +34,16 @@ describe.each(ENGINE_CASES)('Track B (live, $name engine)', (ec) => {
     root = mkdtempSync(join(tmpdir(), 'sdlc-trackb-'));
     story = (
       await jira.createIssue({
-        project: 'SDLC',
+        project: TEST_PROJECT,
         issueType: 'Story',
         summary: `${run} Export button`,
         description: 'Add an export button.\n\n## Acceptance criteria\n\n- Button visible with read access\n- Download starts within 2s',
       })
     ).key;
-    bug = (await jira.createIssue({ project: 'SDLC', issueType: 'Bug', summary: `${run} Export crashes on empty report` })).key;
+    // Team-managed Cloud projects can lack a Bug type; then the bug scenario is skipped and a Task stands in for escalation.
+    const meta = await jira.http.get<{ issueTypes?: { name: string }[]; values?: { name: string }[] }>(`/rest/api/2/issue/createmeta/${TEST_PROJECT}/issuetypes`);
+    hasBug = (meta.issueTypes ?? meta.values ?? []).some((t) => t.name === 'Bug');
+    bug = (await jira.createIssue({ project: TEST_PROJECT, issueType: hasBug ? 'Bug' : 'Task', summary: `${run} Export crashes on empty report` })).key;
     created.push(story, bug);
     await jira.addComment(story, 'Please match the **viewer** toolbar style.');
   });
@@ -75,7 +79,7 @@ describe.each(ENGINE_CASES)('Track B (live, $name engine)', (ec) => {
     const t = r.tickets.find((x) => x.key === story)!;
     expect(t).toMatchObject({ status: 'complete', transition: { action: 'moved' }, report: { action: 'created' } });
     expect(await status(story)).toBe('Done');
-    const page = (await confluence.findPage('SDLC', `Verification: ${story} ${run} Export button`))!;
+    const page = (await confluence.findPage(TEST_SPACE, `Verification: ${story} ${run} Export button`))!;
     pages.push(page.id);
     expect((await jira.comments(story)).at(-1)!.body).toMatch(/^Verification \*passed\*/);
 
@@ -83,7 +87,8 @@ describe.each(ENGINE_CASES)('Track B (live, $name engine)', (ec) => {
     expect(r.tickets.find((x) => x.key === story)).toMatchObject({ transition: { action: 'already' }, report: { action: 'unchanged' } });
   });
 
-  it('bugs get RCA next steps; publish-rca posts once, warns on a missing learning loop', async () => {
+  it('bugs get RCA next steps; publish-rca posts once, warns on a missing learning loop', async (ctx) => {
+    if (!hasBug) ctx.skip(`project ${TEST_PROJECT} has no Bug issue type`);
     const imp = await importTicket({ jira, root, key: bug, engine: ec.engine(), state: state() });
     expect(imp.isBug).toBe(true);
     expect(readFileSync(imp.brief, 'utf8')).toContain(`/rca ${bug}`);
@@ -108,7 +113,7 @@ describe.each(ENGINE_CASES)('Track B (live, $name engine)', (ec) => {
         'Derive headers from the report schema, not the first row.',
       ].join('\n'),
     );
-    const first = await publishRca({ jira, confluence, root, key: bug, spaceKey: 'SDLC', state: state() });
+    const first = await publishRca({ jira, confluence, root, key: bug, spaceKey: TEST_SPACE, state: state() });
     pages.push(first.page.id);
     expect(first.page.action).toBe('created');
     expect(first.commented).toBe(true);
@@ -119,20 +124,21 @@ describe.each(ENGINE_CASES)('Track B (live, $name engine)', (ec) => {
     expect(comment).toContain('{{rows[0]}}');
     expect(comment).toContain('Derive headers from the report schema');
 
-    const again = await publishRca({ jira, confluence, root, key: bug, spaceKey: 'SDLC', state: state() });
+    const again = await publishRca({ jira, confluence, root, key: bug, spaceKey: TEST_SPACE, state: state() });
     expect(again).toMatchObject({ commented: false, page: { action: 'unchanged' } });
 
     writeFileSync(rcaFile, readFileSync(rcaFile, 'utf8') + '\n\n## Prevention\n\n- Rule: exporters derive headers from the schema.\n- Regression test: `export.empty.test.ts`.\n');
-    const fixed = await publishRca({ jira, confluence, root, key: bug, spaceKey: 'SDLC', state: state() });
+    const fixed = await publishRca({ jira, confluence, root, key: bug, spaceKey: TEST_SPACE, state: state() });
     expect(fixed).toMatchObject({ commented: true, page: { action: 'updated' }, warnings: [] });
 
-    const parent = (await confluence.findPage('SDLC', 'Root Cause Analyses'))!;
+    const parent = (await confluence.findPage(TEST_SPACE, 'Root Cause Analyses'))!;
     expect((await confluence.getPage(first.page.id))!.ancestors?.at(-1)?.id).toBe(parent.id);
   });
 
   it('escalate links the ticket to an epic and takes it out of Track B sync', async () => {
-    const epic = (await jira.createIssue({ project: 'SDLC', issueType: 'Epic', summary: `${run} bigger than it looked` })).key;
+    const epic = (await jira.createIssue({ project: TEST_PROJECT, issueType: 'Epic', summary: `${run} bigger than it looked` })).key;
     created.push(epic);
+    await importTicket({ jira, root, key: bug, engine: ec.engine(), state: state() }); // idempotent; the RCA test may have been skipped
     await escalateTicket({ jira, key: bug, epic, state: state() });
     expect((await jira.epicIssues(epic)).map((i) => i.key)).toContain(bug);
     expect((await jira.comments(bug)).at(-1)!.body).toContain('Escalated to Track A');

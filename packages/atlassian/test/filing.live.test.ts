@@ -4,7 +4,7 @@ import { cpSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { connect, ConfluenceClient, fileBreakdown, JiraClient, loadConfig, StateFile, type Breakdown } from '../src/index.ts';
-import { ENGINE_CASES } from './engines.ts';
+import { ENGINE_CASES, TEST_PROJECT, TEST_SPACE } from './engines.ts';
 
 const cfg = loadConfig();
 
@@ -27,8 +27,8 @@ describe.each(ENGINE_CASES)('file-breakdown (live, $name engine)', (ec) => {
     root = mkdtempSync(join(tmpdir(), 'sdlc-filing-'));
     cpSync(ec.fixture, root, { recursive: true });
     breakdown = await ec.engine().loadBreakdown(root);
-    epic = (await jira.createIssue({ project: 'SDLC', issueType: 'Epic', summary: `${run} Reporting Improvements` })).key;
-    prdId = (await confluence.createPage({ spaceKey: 'SDLC', title: `${run} PRD: Reporting Improvements`, markdown: '# PRD\n\nExport all the things.' })).id;
+    epic = (await jira.createIssue({ project: TEST_PROJECT, issueType: 'Epic', summary: `${run} Reporting Improvements` })).key;
+    prdId = (await confluence.createPage({ spaceKey: TEST_SPACE, title: `${run} PRD: Reporting Improvements`, markdown: '# PRD\n\nExport all the things.' })).id;
   });
 
   afterAll(async () => {
@@ -92,8 +92,8 @@ describe.each(ENGINE_CASES)('file-breakdown (live, $name engine)', (ec) => {
   });
 
   it('adopts a human-created story with the same summary (reference duplicate check)', async () => {
-    const epic2 = (await jira.createIssue({ project: 'SDLC', issueType: 'Epic', summary: `${run} second epic` })).key;
-    const manual = (await jira.createIssue({ project: 'SDLC', issueType: 'Story', summary: 'export ui', epicKey: epic2 })).key;
+    const epic2 = (await jira.createIssue({ project: TEST_PROJECT, issueType: 'Epic', summary: `${run} second epic` })).key;
+    const manual = (await jira.createIssue({ project: TEST_PROJECT, issueType: 'Story', summary: 'export ui', epicKey: epic2 })).key;
     const root2 = mkdtempSync(join(tmpdir(), 'sdlc-filing-'));
     try {
       const r = await fileBreakdown({ jira, breakdown, epicKey: epic2, state: new StateFile(root2) });
@@ -108,7 +108,7 @@ describe.each(ENGINE_CASES)('file-breakdown (live, $name engine)', (ec) => {
 
   it('refuses to file the same repo under a different epic', async () => {
     await expect(fileBreakdown({ jira, breakdown, epicKey: 'SDLC-999999', state: new StateFile(root) })).rejects.toThrow();
-    const other = (await jira.createIssue({ project: 'SDLC', issueType: 'Epic', summary: `${run} other` })).key;
+    const other = (await jira.createIssue({ project: TEST_PROJECT, issueType: 'Epic', summary: `${run} other` })).key;
     try {
       await expect(fileBreakdown({ jira, breakdown, epicKey: other, state: new StateFile(root) })).rejects.toThrow(/already filed under/);
     } finally {

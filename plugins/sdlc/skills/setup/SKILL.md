@@ -36,7 +36,12 @@ ATLASSIAN_EMAIL=<your Atlassian account email>
 ATLASSIAN_API_TOKEN=<API token from id.atlassian.com → Security → API tokens>
 ```
 
-Never print token values or commit this file. Then check: `sdlc-atl whoami`.
+Never print token values or commit this file. On Windows, check it wasn't saved as `atlassian.env.txt`
+(Notepad adds `.txt`). Then check: `sdlc-atl whoami`. Inside a repo that has sdlc-work's local test stack,
+`SDLC_ATLASSIAN_ENV=user` makes the tools use this file instead.
+
+Bug handling (`/sdlc:rca`) needs a **Bug** issue type in the project; team-managed Cloud projects may not have
+one until you add it (Project settings → Issue types).
 
 ## 2. Repo config (once per repo)
 

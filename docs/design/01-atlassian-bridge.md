@@ -135,9 +135,10 @@ Flows may become configurable later, once we've seen how the team uses them.
    returns 410), epics via `parent` ("Epic Link" removed 2025; Agile epic endpoint deprecated), `accountId` identity.
    Confluence Cloud (`ConfluenceCloudClient`): v2 pages/children/properties (v1 content API removed from the spec),
    v1 kept only for CQL search and current user. MCP launcher passes Cloud credentials to mcp-atlassian.
-   **Verified against contract fakes only**; to verify live, point `~/.sdlc/atlassian.env` at a (free) Cloud site
-   and run the live suites. Unconfirmed until then: issue-link direction on Cloud, whether a site still requires
-   Epic Name.
+   **Verified live on Atlassian Cloud** (2026-09-25, free site, team-managed Scrum project): all live suites pass for
+   both engines (the bug/RCA scenario skips when a project has no Bug type). Confirmed on Cloud: issue-link direction
+   matches DC; Epic Name not required; CQL search indexing lags ~40s (vs <1s on DC); Cloud omits `fields` when no
+   requested field has a value.
 
 ## DC notes
 

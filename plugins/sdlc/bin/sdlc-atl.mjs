@@ -17772,7 +17772,8 @@ import { homedir } from "node:os";
 import { dirname as dirname2, join as join2, resolve } from "node:path";
 function loadConfig(opts = {}) {
   const userFile = join2(homedir(), ".sdlc", "atlassian.env");
-  const file = opts.envFile ?? process.env.SDLC_ATLASSIAN_ENV ?? findLocalStackEnv(opts.cwd ?? process.cwd()) ?? (existsSync2(userFile) ? userFile : void 0);
+  const explicit = process.env.SDLC_ATLASSIAN_ENV === "user" ? userFile : process.env.SDLC_ATLASSIAN_ENV;
+  const file = opts.envFile ?? explicit ?? findLocalStackEnv(opts.cwd ?? process.cwd()) ?? (existsSync2(userFile) ? userFile : void 0);
   const fromFile = file && existsSync2(file) ? parseEnv(readFileSync2(file, "utf8")) : {};
   const get = (k2) => process.env[k2] || fromFile[k2] || "";
   const product = (p) => {
@@ -19533,7 +19534,7 @@ var JiraClient = class {
   async epicOf(key) {
     if (this.flavor === "cloud") {
       const issue = await this.getIssue(key, "parent");
-      const parent = issue?.fields.parent;
+      const parent = issue?.fields?.parent;
       const type = parent?.fields?.issuetype;
       return parent && (type?.name.toLowerCase() === "epic" || type?.hierarchyLevel === 1) ? parent.key : void 0;
     }

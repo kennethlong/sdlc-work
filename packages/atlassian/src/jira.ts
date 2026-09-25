@@ -130,7 +130,8 @@ export class JiraClient {
   async epicOf(key: string): Promise<string | undefined> {
     if (this.flavor === 'cloud') {
       const issue = await this.getIssue(key, 'parent');
-      const parent = issue?.fields.parent as { key: string; fields?: { issuetype?: { name: string; hierarchyLevel?: number } } } | undefined;
+      // Cloud omits `fields` entirely when none of the requested fields has a value.
+      const parent = issue?.fields?.parent as { key: string; fields?: { issuetype?: { name: string; hierarchyLevel?: number } } } | undefined;
       const type = parent?.fields?.issuetype;
       return parent && (type?.name.toLowerCase() === 'epic' || type?.hierarchyLevel === 1) ? parent.key : undefined;
     }

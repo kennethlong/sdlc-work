@@ -4,7 +4,7 @@ A toolset of AI agent skills, subagents, hooks, and scripts covering the full so
 lifecycle, built on Claude Code and portable Agent Skills. It started from
 [`ai-native-starter-pack`](https://github.com/coleam00/ai-native-starter-pack).
 
-**Status:** Atlassian bridge slices 1–7 done (Data Center verified live; Cloud via contract tests): CLI + library, agent tools (MCP), Track A (PRD → tickets → progress back), Track B (tickets, bug RCAs), engine = GSD or reference-style PIV, and a Claude Code plugin with 12 portable skills + auto-sync git hook.
+**Status:** Atlassian bridge slices 1–7 done (verified live on Data Center and Atlassian Cloud): CLI + library, agent tools (MCP), Track A (PRD → tickets → progress back), Track B (tickets, bug RCAs), engine = GSD or reference-style PIV, and a Claude Code plugin with 12 portable skills + auto-sync git hook.
 
 ## Quick start
 
@@ -42,6 +42,8 @@ npm install
 npm run typecheck
 npm test                 # unit + live (live tests skip when no Jira/Confluence is configured)
 npm run test:live        # only the integration tests against infra/atlassian-dc
+# live suites against your own instance (e.g. Cloud) instead of the local stack:
+#   $env:SDLC_ATLASSIAN_ENV='user'; $env:SDLC_TEST_PROJECT='SCRUM'; $env:SDLC_TEST_SPACE='SD'; npm run test:live
 npm run bundle           # rebuild plugins/sdlc/bin after changing packages/atlassian (commit the result)
 ```
 

@@ -4,7 +4,7 @@ import { cpSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { connect, ConfluenceClient, fileBreakdown, JiraClient, loadConfig, StateFile, syncProgress } from '../src/index.ts';
-import { ENGINE_CASES } from './engines.ts';
+import { ENGINE_CASES, TEST_PROJECT, TEST_SPACE } from './engines.ts';
 
 const cfg = loadConfig();
 
@@ -33,8 +33,8 @@ describe.each(ENGINE_CASES)('sync (live, $name engine)', (ec) => {
     ({ jira, confluence } = connect());
     root = mkdtempSync(join(tmpdir(), 'sdlc-sync-'));
     cpSync(ec.fixture, root, { recursive: true });
-    epic = (await jira.createIssue({ project: 'SDLC', issueType: 'Epic', summary: `${run} Reporting` })).key;
-    prdId = (await confluence.createPage({ spaceKey: 'SDLC', title: `${run} PRD`, markdown: '# PRD' })).id;
+    epic = (await jira.createIssue({ project: TEST_PROJECT, issueType: 'Epic', summary: `${run} Reporting` })).key;
+    prdId = (await confluence.createPage({ spaceKey: TEST_SPACE, title: `${run} PRD`, markdown: '# PRD' })).id;
     const filed = await fileBreakdown({ jira, confluence, breakdown: await ec.engine().loadBreakdown(root), epicKey: epic, prdPageId: prdId, state: new StateFile(root) });
     for (const i of filed.items) key[i.id] = i.key!;
   });
@@ -65,7 +65,7 @@ describe.each(ENGINE_CASES)('sync (live, $name engine)', (ec) => {
 
     const rep = byId(r, id1).report!;
     expect(rep.action).toBe('created');
-    const page = (await confluence.findPage('SDLC', `Verification: ${key[id1]} CSV export endpoint`))!;
+    const page = (await confluence.findPage(TEST_SPACE, `Verification: ${key[id1]} CSV export endpoint`))!;
     expect(page.ancestors?.at(-1)?.id).toBe(new StateFile(root).data.breakdownPageId);
     expect(ConfluenceClient.markdown((await confluence.getPage(page.id))!)).toContain('✅ passed');
 

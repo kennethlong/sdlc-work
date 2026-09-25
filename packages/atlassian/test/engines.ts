@@ -98,3 +98,7 @@ export const ENGINE_CASES: EngineCase[] = [
       write(join(root, '.claude', 'execution-reports'), pivName(key), ['# Execution Report', '', '### Validation Results', '', '- Lint: ✓', '- Unit Tests: ✓ 9 passed']),
   },
 ];
+
+/** Jira project and Confluence space the live suites write to (defaults match the local DC stack). */
+export const TEST_PROJECT = process.env.SDLC_TEST_PROJECT ?? 'SDLC';
+export const TEST_SPACE = process.env.SDLC_TEST_SPACE ?? 'SDLC';

@@ -21,8 +21,9 @@ export type AtlassianConfig = { jira?: ProductConfig; confluence?: ProductConfig
  */
 export function loadConfig(opts: { envFile?: string; cwd?: string } = {}): AtlassianConfig {
   const userFile = join(homedir(), '.sdlc', 'atlassian.env');
-  const file =
-    opts.envFile ?? process.env.SDLC_ATLASSIAN_ENV ?? findLocalStackEnv(opts.cwd ?? process.cwd()) ?? (existsSync(userFile) ? userFile : undefined);
+  // SDLC_ATLASSIAN_ENV=user selects the per-user file even inside a repo that has a local stack.
+  const explicit = process.env.SDLC_ATLASSIAN_ENV === 'user' ? userFile : process.env.SDLC_ATLASSIAN_ENV;
+  const file = opts.envFile ?? explicit ?? findLocalStackEnv(opts.cwd ?? process.cwd()) ?? (existsSync(userFile) ? userFile : undefined);
   const fromFile = file && existsSync(file) ? parseEnv(readFileSync(file, 'utf8')) : {};
   const get = (k: string) => process.env[k] || fromFile[k] || '';
 

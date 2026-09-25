@@ -10,7 +10,8 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 function loadConfig(opts = {}) {
   const userFile = join(homedir(), ".sdlc", "atlassian.env");
-  const file = opts.envFile ?? process.env.SDLC_ATLASSIAN_ENV ?? findLocalStackEnv(opts.cwd ?? process.cwd()) ?? (existsSync(userFile) ? userFile : void 0);
+  const explicit = process.env.SDLC_ATLASSIAN_ENV === "user" ? userFile : process.env.SDLC_ATLASSIAN_ENV;
+  const file = opts.envFile ?? explicit ?? findLocalStackEnv(opts.cwd ?? process.cwd()) ?? (existsSync(userFile) ? userFile : void 0);
   const fromFile = file && existsSync(file) ? parseEnv(readFileSync(file, "utf8")) : {};
   const get = (k) => process.env[k] || fromFile[k] || "";
   const product = (p) => {
