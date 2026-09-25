@@ -39,6 +39,7 @@ Put the company **developer license** keys in `.env` before the first `up` to us
 ## Day to day
 
 ```powershell
+./dc.ps1 creds                  # show the admin logins
 ./dc.ps1 status                 # container + app state
 ./dc.ps1 setup -Headed          # re-run setup and watch the browser (debugging)
 ./dc.ps1 logs jira              # follow logs for one service

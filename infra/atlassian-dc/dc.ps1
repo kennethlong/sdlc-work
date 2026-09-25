@@ -7,6 +7,7 @@
   ./dc.ps1 up -NoSetup              # containers only
   ./dc.ps1 setup                    # (re)run the unattended setup against running containers; idempotent
   ./dc.ps1 init                     # create .env with random DB passwords (up does this if needed)
+  ./dc.ps1 creds                    # show the admin logins (local dev only)
   ./dc.ps1 status
   ./dc.ps1 logs jira
   ./dc.ps1 down                     # stop, keep data
@@ -17,7 +18,7 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('init', 'up', 'setup', 'down', 'status', 'logs', 'reset', 'license')]
+    [ValidateSet('init', 'up', 'setup', 'creds', 'down', 'status', 'logs', 'reset', 'license')]
     [string]$Command = 'status',
 
     # logs: service name. license: jira | confluence | all.
@@ -191,6 +192,13 @@ function Invoke-Setup {
     }
 }
 
+function Show-Creds {
+    foreach ($p in 'JIRA', 'CONFLUENCE') {
+        $url = if ($p -eq 'JIRA') { "http://jira.localhost:$(Get-EnvValue 'JIRA_PORT' '8080')" } else { "http://confluence.localhost:$(Get-EnvValue 'CONFLUENCE_PORT' '8090')" }
+        Write-Host ("{0,-11} {1}  user: {2}  password: {3}" -f $p.ToLower(), $url, (Get-EnvValue "$($p)_ADMIN_USER" '?'), (Get-EnvValue "$($p)_ADMIN_PASSWORD" '?'))
+    }
+}
+
 $apps = [ordered]@{
     jira       = "http://localhost:$(Get-EnvValue 'JIRA_PORT' '8080')"
     confluence = "http://localhost:$(Get-EnvValue 'CONFLUENCE_PORT' '8090')"
@@ -216,10 +224,13 @@ switch ($Command) {
         Write-Host "Jira:       http://jira.localhost:$(Get-EnvValue 'JIRA_PORT' '8080')"
         Write-Host "Confluence: http://confluence.localhost:$(Get-EnvValue 'CONFLUENCE_PORT' '8090')"
         if (-not $NoSetup) {
-            Write-Host "Admin logins and tokens are in $EnvFile (JIRA_ADMIN_*, CONFLUENCE_ADMIN_*, *_PAT)."
+            Write-Host ''
+            Show-Creds
+            Write-Host "(Also in $EnvFile, with the API tokens. Show again: ./dc.ps1 creds)"
         }
     }
     'setup' { Invoke-Setup }
+    'creds' { Show-Creds }
     'status' {
         Invoke-Compose ps
         foreach ($k in $apps.Keys) { Write-Host ("{0,-11} {1}" -f $k, (Get-AppState $apps[$k])) }
