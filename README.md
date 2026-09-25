@@ -10,9 +10,10 @@ lifecycle, built on Claude Code and portable Agent Skills. It started from
 
 ```powershell
 # Claude Code
-claude plugin marketplace add C:Codesdlc-work
+claude plugin marketplace add C:\Code\sdlc-work
 claude plugin install sdlc@sdlc-work
-# other agents (Codex, Gemini CLI, ...): CLI on PATH + skills in ~/.agents/skills
+# other agents (GitHub Copilot CLI, Codex, Gemini CLI, ...): CLI on PATH + skills in ~/.agents/skills,
+# and the Jira/Confluence MCP server registered with Copilot CLI when it is installed
 ./scripts/install.ps1
 ```
 
@@ -33,7 +34,7 @@ Then run `/sdlc:setup` in a repo. See [plugins/sdlc/README.md](plugins/sdlc/READ
 |---|---|
 | `packages/atlassian` | Jira/Confluence DC client (markdown in/out) and the `sdlc-atl` CLI: `whoami`, `breakdown`, `file-breakdown --epic KEY --prd PAGE_ID [--dry-run]`, `sync [--dry-run]`, Track B: `import KEY`, `publish-rca KEY`, `escalate KEY --epic E` |
 | `plugins/sdlc` | The Claude Code plugin: 15 skills, bundled CLI (`bin/sdlc-atl.mjs`) and MCP launcher |
-| `scripts/install.ps1` | Install for other agents: CLI on PATH, skills in `~/.agents/skills` |
+| `scripts/install.ps1` | Install for other agents: CLI on PATH, skills in `~/.agents/skills`, MCP server registered with GitHub Copilot CLI |
 | `scripts/mcp-atlassian.mjs` | Launches [mcp-atlassian](https://github.com/sooperset/mcp-atlassian) against the configured DC instances; wired in `.mcp.json` |
 | `infra/atlassian-dc` | One-command local Jira + Confluence + Bitbucket DC (`./dc.ps1 up`) |
 | `templates/ci` | CI review templates: GitHub Actions, Jenkins for Bitbucket DC (untested) |

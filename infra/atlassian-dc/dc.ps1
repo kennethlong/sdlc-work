@@ -236,8 +236,10 @@ function Initialize-BitbucketSetup {
 # The postgres init script only runs on an empty volume; re-run it (idempotent) so apps added later get a database.
 function Initialize-Databases {
     Invoke-Compose up -d postgres | Out-Null
-    for ($i = 0; $i -lt 30; $i++) {
-        Invoke-Compose exec -T postgres pg_isready -U postgres | Out-Null
+    # Probe over TCP: on a fresh volume the image first runs its own init on a socket-only temporary server, and
+    # running our script against that one races it.
+    for ($i = 0; $i -lt 60; $i++) {
+        Invoke-Compose exec -T postgres pg_isready -h 127.0.0.1 -U postgres | Out-Null
         if (-not $LASTEXITCODE) { break }
         Start-Sleep -Seconds 2
     }

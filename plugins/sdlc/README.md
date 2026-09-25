@@ -14,9 +14,13 @@ claude plugin install sdlc@sdlc-work
 
 Skills are then `/sdlc:<name>`.
 
-**Other agents** (Codex, Gemini CLI, Cursor, …): from the sdlc-work repo run `scripts/install.ps1`. It puts
-`sdlc-atl` on PATH and copies the skills to `~/.agents/skills` as `sdlc-<name>` (`-SkillDirs` for other
-locations).
+**Other agents** (GitHub Copilot CLI, Codex, Gemini CLI, Cursor, …): from the sdlc-work repo run
+`scripts/install.ps1`. It puts `sdlc-atl` on PATH and copies the skills to `~/.agents/skills` as `sdlc-<name>`
+(`-SkillDirs` for other locations).
+
+**GitHub Copilot CLI** reads `~/.agents/skills`, so the skills appear as `sdlc-<name>`; `install.ps1` also
+registers the Jira/Confluence MCP server with it as `sdlc-atlassian` (`copilot mcp list`; `-NoCopilot` to skip).
+Copilot CLI can also load this plugin unchanged: `copilot --plugin-dir <sdlc-work>/plugins/sdlc`.
 
 Then `/sdlc:setup` (credentials in `~/.sdlc/atlassian.env`, engine, git hook).
 
