@@ -29,10 +29,12 @@
       "verificationPageId": "2523137"
     },
     "S-8": {
-      "issueKey": "SCRUM-154"
+      "issueKey": "SCRUM-154",
+      "verificationPageId": "1966143"
     },
     "F-1": {
-      "issueKey": "SCRUM-155"
+      "issueKey": "SCRUM-155",
+      "verificationPageId": "1998993"
     },
     "T-8": {
       "issueKey": "SCRUM-156"
@@ -42,25 +44,32 @@
       "verificationPageId": "2556022"
     },
     "F-2": {
-      "issueKey": "SCRUM-158"
+      "issueKey": "SCRUM-158",
+      "verificationPageId": "2130073"
     },
     "F-3": {
-      "issueKey": "SCRUM-159"
+      "issueKey": "SCRUM-159",
+      "verificationPageId": "1966166"
     },
     "F-4": {
-      "issueKey": "SCRUM-160"
+      "issueKey": "SCRUM-160",
+      "verificationPageId": "2097250"
     },
     "F-6": {
-      "issueKey": "SCRUM-161"
+      "issueKey": "SCRUM-161",
+      "verificationPageId": "1999015"
     },
     "F-7": {
-      "issueKey": "SCRUM-162"
+      "issueKey": "SCRUM-162",
+      "verificationPageId": "2621553"
     },
     "F-8": {
-      "issueKey": "SCRUM-163"
+      "issueKey": "SCRUM-163",
+      "verificationPageId": "2359382"
     },
     "D-1": {
-      "issueKey": "SCRUM-164"
+      "issueKey": "SCRUM-164",
+      "verificationPageId": "1999039"
     },
     "H-1": {
       "issueKey": "SCRUM-165"
@@ -81,7 +90,8 @@
       "issueKey": "SCRUM-170"
     },
     "F-5": {
-      "issueKey": "SCRUM-171"
+      "issueKey": "SCRUM-171",
+      "verificationPageId": "2130097"
     },
     "H-3": {
       "issueKey": "SCRUM-172"
