@@ -162,6 +162,20 @@ export class JiraClient {
     await this.http.put(`/rest/api/2/issue/${encodeURIComponent(key)}`, { fields });
   }
 
+  /** Issue entity property (JSON, invisible in the UI): same API on Data Center and Cloud. */
+  async getIssueProperty<T>(key: string, property: string): Promise<T | undefined> {
+    const r = await this.http.get<{ value: T }>(`/rest/api/2/issue/${encodeURIComponent(key)}/properties/${encodeURIComponent(property)}`, undefined, [404]);
+    return r?.value;
+  }
+
+  async setIssueProperty(key: string, property: string, value: unknown) {
+    await this.http.put(`/rest/api/2/issue/${encodeURIComponent(key)}/properties/${encodeURIComponent(property)}`, value);
+  }
+
+  async deleteIssueProperty(key: string, property: string) {
+    await this.http.request('DELETE', `/rest/api/2/issue/${encodeURIComponent(key)}/properties/${encodeURIComponent(property)}`, { tolerate: [404] });
+  }
+
   /** Add and remove labels in one atomic edit (no read-modify-write race with people editing the issue). */
   async editLabels(key: string, add: string[] = [], remove: string[] = []) {
     const ops = [...add.map((l) => ({ add: l })), ...remove.map((l) => ({ remove: l }))];

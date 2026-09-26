@@ -4,11 +4,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PivEngine } from '../src/engines/piv.ts';
-import { agentCommand, answered, defaultJql, ineligibility, LABELS, pollAndWork, workDisabled, pivPaths, workPrompt, workTicket, type AgentRunner, type WorkDeps } from '../src/headless.ts';
+import { agentCommand, answered, CLAIM_PROPERTY, claimIsStale, defaultJql, ineligibility, LABELS, pollAndWork, workDisabled, pivPaths, workPrompt, workTicket, type AgentRunner, type WorkDeps } from '../src/headless.ts';
 import type { GitHost, PullRequest } from '../src/hosts/types.ts';
 import { JiraClient, type JiraIssue } from '../src/jira.ts';
 import { StateFile } from '../src/state.ts';
 
+const jitter = () => new Promise((r) => setTimeout(r, Math.random() * 10));
 const git = (cwd: string, ...a: string[]) => execFileSync('git', a, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const dirs: string[] = [];
 const tmp = (p: string) => {
@@ -36,6 +37,7 @@ function repo() {
 type Comment = { author: { name: string }; body: string; created: string };
 function fakeJira(issue: Partial<JiraIssue['fields']> = {}) {
   const labels = new Set<string>([LABELS.ready]);
+  const props = new Map<string, unknown>();
   const comments: Comment[] = [];
   const statuses: string[] = [];
   const fields = () => ({
@@ -67,8 +69,12 @@ function fakeJira(issue: Partial<JiraIssue['fields']> = {}) {
       throw new Error('no such field');
     },
     search: async () => [{ key: 'ABC-1', id: '1', self: '', fields: fields() }],
+    // Issue properties with jitter, so concurrent runs really interleave.
+    getIssueProperty: async (_k: string, p: string) => (await jitter(), props.get(p)),
+    setIssueProperty: async (_k: string, p: string, v: unknown) => (await jitter(), void props.set(p, structuredClone(v))),
+    deleteIssueProperty: async (_k: string, p: string) => void props.delete(p),
   });
-  return { jira, labels, comments, statuses };
+  return { jira, labels, comments, statuses, props };
 }
 
 function fakeHost() {
@@ -122,7 +128,7 @@ function deps(runAgent: AgentRunner, jiraFields: Partial<JiraIssue['fields']> = 
   const { root, origin } = repo();
   const j = fakeJira(jiraFields);
   const h = fakeHost();
-  const d: WorkDeps = { jira: j.jira, host: h.host, engine: new PivEngine(), state: new StateFile(root), root, config: { git: { base: 'main' } }, runAgent, buildUrl: 'https://ci/job/1' };
+  const d: WorkDeps = { jira: j.jira, host: h.host, engine: new PivEngine(), state: new StateFile(root), root, config: { git: { base: 'main' }, work: { claimSettleSeconds: 0.05 } }, runAgent, buildUrl: 'https://ci/job/1' };
   return { d, root, origin, ...j, ...h };
 }
 
@@ -225,9 +231,45 @@ describe('clarification loop and eligibility', () => {
   });
 
   it('default query and agent command lines', () => {
-    expect(defaultJql({ jira: { projects: ['SDLC'] } })).toMatch(/^project in \(SDLC\) AND labels in \(ai-ready, ai-needs-info\) AND labels not in \(ai-running\)/);
+    expect(defaultJql({ jira: { projects: ['SDLC'] } })).toMatch(/^project in \(SDLC\) AND statusCategory != Done AND \(\(labels in \(ai-ready, ai-needs-info\) AND labels not in \(ai-running\)\)/);
     expect(agentCommand({}, 'P', 'f')).toEqual(['copilot', '-p', 'P', '--allow-all-tools', '--no-ask-user', '--deny-tool', 'shell(git push)']);
     expect(agentCommand({ agent: 'codex' }, 'P', 'f')).toEqual(['codex', 'exec', '--full-auto', 'P']);
     expect(agentCommand({ agentCommand: ['node', 'fake.mjs', '{promptFile}'] }, 'P', 'f.md')).toEqual(['node', 'fake.mjs', 'f.md']);
+  });
+});
+
+describe('claiming a story (two jobs with overlapping queries)', () => {
+  it('two runners racing for one story: exactly one works it, the other backs off', { timeout: 60_000 }, async () => {
+    const a = deps(agents.passes);
+    const b = deps(agents.passes);
+    // Same Jira and host, separate CI workspaces.
+    b.d.jira = a.d.jira;
+    b.d.host = a.d.host;
+    b.d.buildUrl = 'https://ci/job/2';
+    const results = await Promise.all([workTicket('ABC-1', a.d), workTicket('ABC-1', b.d)]);
+    expect(results.map((r) => r.outcome).sort()).toEqual(['busy', 'pr']);
+    expect(a.created).toHaveLength(1);
+    expect(a.comments.filter((c) => /Started an unattended AI run/.test(c.body))).toHaveLength(1);
+    expect(a.props.size).toBe(0); // the winner released its claim
+  });
+
+  it('a live claim blocks; a stale one (dead runner) is taken over', { timeout: 30_000 }, async () => {
+    const t = deps(agents.passes);
+    t.props.set(CLAIM_PROPERTY, { id: 'other', at: new Date().toISOString(), build: 'https://ci/job/9' });
+    expect(await workTicket('ABC-1', t.d)).toMatchObject({ outcome: 'busy', reason: expect.stringMatching(/another run holds it/) });
+    t.props.set(CLAIM_PROPERTY, { id: 'other', at: new Date(Date.now() - 3 * 3600_000).toISOString() });
+    expect((await workTicket('ABC-1', t.d)).outcome).toBe('pr');
+  });
+
+  it('staleness follows the time limit', () => {
+    const at = (min: number) => ({ id: 'x', at: new Date(Date.now() - min * 60_000).toISOString() });
+    expect(claimIsStale(at(30))).toBe(false);
+    expect(claimIsStale(at(61))).toBe(true); // 45 + 15
+    expect(claimIsStale(at(61), { timeoutMinutes: 90 })).toBe(false);
+    expect(claimIsStale(undefined)).toBe(true);
+  });
+
+  it('the poll query also finds stories whose runner died', () => {
+    expect(defaultJql({})).toContain('(labels = ai-running AND updated <= "-60m")');
   });
 });

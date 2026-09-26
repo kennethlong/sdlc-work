@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BitbucketDcHost, connect, envLookup, JiraClient, LABELS, loadConfig, PivEngine, resolveHost, StateFile, workTicket, type WorkDeps } from '../src/index.ts';
+import { BitbucketDcHost, CLAIM_PROPERTY, claimStory, connect, defaultJql, envLookup, JiraClient, LABELS, loadConfig, PivEngine, resolveHost, StateFile, workTicket, type WorkDeps } from '../src/index.ts';
 import { TEST_PROJECT } from './engines.ts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
@@ -37,7 +37,7 @@ describe.skipIf(!bbBase || !bbToken || !cfg.jira)('headless work (live, Jira + B
     engine: new PivEngine(),
     state: new StateFile(root),
     root,
-    config: { git: { base }, work: { agentCommand: ['node', fakeAgent, key, mode, '{phase}', '{promptFile}'] } },
+    config: { git: { base }, work: { agentCommand: ['node', fakeAgent, key, mode, '{phase}', '{promptFile}'], claimSettleSeconds: 1 } },
     buildUrl: 'http://ci.localhost/job/42',
   });
 
@@ -91,6 +91,23 @@ describe.skipIf(!bbBase || !bbToken || !cfg.jira)('headless work (live, Jira + B
     const bodies = (await jira.comments(key)).map((c) => c.body);
     expect(bodies[0]).toMatch(/Started an unattended AI run/);
     expect(bodies.at(-1)).toMatch(/Ready for review/);
+    expect(await jira.getIssueProperty(key, CLAIM_PROPERTY)).toBeUndefined(); // released
+  });
+
+  it('claims on real Jira: two racing runners, exactly one wins; the claim is an invisible issue property', async () => {
+    const key = await story('Claim race');
+    const cfg = { claimSettleSeconds: 2 };
+    const [a, b] = await Promise.all([claimStory(jira, key, cfg, 'http://ci/a'), claimStory(jira, key, cfg, 'http://ci/b')]);
+    expect([a.ok, b.ok].filter(Boolean)).toHaveLength(1);
+    const held = await jira.getIssueProperty<{ build: string }>(key, CLAIM_PROPERTY);
+    expect(held?.build).toBe(a.ok ? 'http://ci/a' : 'http://ci/b');
+    expect((await claimStory(jira, key, cfg)).ok).toBe(false); // still held
+    await jira.deleteIssueProperty(key, CLAIM_PROPERTY);
+    expect(await jira.getIssueProperty(key, CLAIM_PROPERTY)).toBeUndefined();
+  });
+
+  it('the default poll query is valid JQL on this Jira', async () => {
+    await expect(jira.search(defaultJql({ jira: { projects: [TEST_PROJECT] } }), { limit: 1 })).resolves.toBeDefined();
   });
 
   it('asks instead of guessing: questions in Jira, ai-needs-info, nothing pushed', async () => {

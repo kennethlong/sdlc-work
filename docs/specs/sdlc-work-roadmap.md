@@ -332,6 +332,15 @@ real repo, then build the differentiators. Source: the crew review (docs/researc
 - **Files touched (estimate):** `infra/atlassian-dc/*`, `templates/ci/jenkins/*`
 - **Depends on:** none
 
+### W-6 — Claim check for overlapping jobs
+- **Scope:** Two CI jobs whose queries match the same story never both work it
+- **Acceptance criteria:**
+  - A run claims the story with an issue property (write, settle, re-read; last write wins) after re-reading fresh state; losers report `busy` and don't comment or label
+  - The claim is released when the run ends; a dead runner's claim goes stale after the time limit + 15 minutes and the poll query picks the story up again
+  - Verified on Data Center and Cloud
+- **Files touched (estimate):** `packages/atlassian/src/headless.ts`, `packages/atlassian/src/jira.ts`
+- **Depends on:** W-2
+
 ### W-5 — End-to-end demo
 - **Scope:** Label a story, get a draft PR
 - **Acceptance criteria:**

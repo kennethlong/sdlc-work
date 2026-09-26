@@ -175,6 +175,9 @@
     "W-5": {
       "issueKey": "SCRUM-298",
       "verificationPageId": "1999111"
+    },
+    "W-6": {
+      "issueKey": "SCRUM-334"
     }
   },
   "breakdownPageId": "491549",

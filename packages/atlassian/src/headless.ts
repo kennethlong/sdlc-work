@@ -44,9 +44,41 @@ export type WorkConfig = {
   timeoutMinutes?: number;
   /** Stories worked per poll (one at a time). */
   maxPerRun?: number;
+  /** How long a claim settles before it is re-read (two runners racing for one story: the last write wins). */
+  claimSettleSeconds?: number;
 };
 
-export type WorkOutcome = 'pr' | 'needs-info' | 'failed' | 'skipped' | 'disabled';
+/** busy: another runner holds the story (it is left alone). */
+export type WorkOutcome = 'pr' | 'needs-info' | 'failed' | 'skipped' | 'disabled' | 'busy';
+
+/** Issue property holding the current run's claim: invisible in the UI, same API on Data Center and Cloud. */
+export const CLAIM_PROPERTY = 'sdlc.work.claim';
+export type Claim = { id: string; at: string; build?: string };
+
+/** A claim older than the run's time limit plus a margin belongs to a runner that died; it may be taken over. */
+export function claimIsStale(claim: Claim | undefined, cfg: WorkConfig = {}, now = Date.now()): boolean {
+  if (!claim?.at) return true;
+  return now - Date.parse(claim.at) > ((cfg.timeoutMinutes ?? 45) + 15) * 60_000;
+}
+
+/**
+ * Claim a story for this run. Jira has no compare-and-set, so: re-read fresh state (never trust poll results, which
+ * may be minutes old), write our claim, wait, read it back. Racing runners overwrite each other and only the last
+ * write survives, so exactly one sees its own id; the others back off.
+ */
+export async function claimStory(jira: JiraClient, key: string, cfg: WorkConfig, build?: string): Promise<{ ok: true; claim: Claim } | { ok: false; reason: string }> {
+  const fresh = await jira.getIssue(key, 'labels,status');
+  if (!fresh) return { ok: false, reason: 'issue not found' };
+  const held = await jira.getIssueProperty<Claim>(key, CLAIM_PROPERTY);
+  if (held && !claimIsStale(held, cfg)) return { ok: false, reason: `another run holds it since ${held.at}${held.build ? ` (${held.build})` : ''}` };
+  if (!held && ((fresh.fields.labels ?? []) as string[]).includes(LABELS.running)) return { ok: false, reason: `labelled ${LABELS.running} by a run without a claim; remove the label to retry` };
+  const claim: Claim = { id: `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`, at: new Date().toISOString(), ...(build ? { build } : {}) };
+  await jira.setIssueProperty(key, CLAIM_PROPERTY, claim);
+  await new Promise((r) => setTimeout(r, (cfg.claimSettleSeconds ?? 5) * 1000));
+  const now = await jira.getIssueProperty<Claim>(key, CLAIM_PROPERTY);
+  if (now?.id !== claim.id) return { ok: false, reason: `another run claimed it at the same time${now?.build ? ` (${now.build})` : ''}` };
+  return { ok: true, claim };
+}
 export type WorkResult = { key: string; outcome: WorkOutcome; reason?: string; prUrl?: string; branch?: string };
 
 export type AgentRun = { code: number | null; output: string; timedOut: boolean };
@@ -214,6 +246,29 @@ export async function workTicket(key: string, deps: WorkDeps, opts: { force?: bo
 
   const issue = await jira.getIssue(key, '*navigable,comment');
   if (!issue) throw new Error(`Issue ${key} not found`);
+
+  // Claim first: two jobs whose queries overlap must never both work (or both comment on) the same story.
+  const claimed = await claimStory(jira, key, cfg, deps.buildUrl);
+  if (!claimed.ok) {
+    log(`${key}: busy, ${claimed.reason}`);
+    return { key, outcome: 'busy', reason: claimed.reason };
+  }
+  const release = async () => {
+    const current = await jira.getIssueProperty<Claim>(key, CLAIM_PROPERTY).catch(() => undefined);
+    if (current?.id === claimed.claim.id) await jira.deleteIssueProperty(key, CLAIM_PROPERTY).catch(() => undefined);
+  };
+  try {
+    return await workClaimed(key, issue, deps, opts);
+  } finally {
+    await release();
+  }
+}
+
+async function workClaimed(key: string, issue: JiraIssue, deps: WorkDeps, opts: { force?: boolean }): Promise<WorkResult> {
+  const { jira, root, config } = deps;
+  const cfg = config.work ?? {};
+  const log = deps.log ?? (() => {});
+  const build = deps.buildUrl ? ` ([build](${deps.buildUrl}))` : '';
   if (!opts.force) {
     const why = ineligibility(issue, cfg, cfg.maxPoints !== undefined ? await storyPoints(jira, issue) : undefined);
     if (why.length) {
@@ -350,10 +405,14 @@ export async function workTicket(key: string, deps: WorkDeps, opts: { force?: bo
   }
 }
 
-/** Default poll query: this repo's projects, ready or waiting-for-info stories, not running, not Done. */
+/**
+ * Default poll query: this repo's projects; ready or waiting-for-info stories that aren't running, plus running ones
+ * untouched for longer than a run may take (a dead runner; the claim check decides). Not Done.
+ */
 export function defaultJql(config: SdlcConfig & { work?: WorkConfig }): string {
   const projects = config.jira?.projects?.length ? `project in (${config.jira.projects.join(', ')}) AND ` : '';
-  return `${projects}labels in (${LABELS.ready}, ${LABELS.needsInfo}) AND labels not in (${LABELS.running}) AND statusCategory != Done ORDER BY priority DESC, created ASC`;
+  const staleMinutes = (config.work?.timeoutMinutes ?? 45) + 15;
+  return `${projects}statusCategory != Done AND ((labels in (${LABELS.ready}, ${LABELS.needsInfo}) AND labels not in (${LABELS.running})) OR (labels = ${LABELS.running} AND updated <= "-${staleMinutes}m")) ORDER BY priority DESC, created ASC`;
 }
 
 /** A story waiting for answers is ready again once someone other than the bot commented after the bot's question. */
@@ -374,7 +433,7 @@ export async function pollAndWork(deps: WorkDeps): Promise<WorkResult[]> {
   const me = await deps.jira.myself();
   const results: WorkResult[] = [];
   for (const issue of found) {
-    if (results.length >= (cfg.maxPerRun ?? 1)) break;
+    if (results.filter((r) => r.outcome !== 'busy').length >= (cfg.maxPerRun ?? 1)) break; // busy ones don't count
     const labels = (issue.fields.labels ?? []) as string[];
     if (labels.includes(LABELS.needsInfo) && !labels.includes(LABELS.ready) && !answered(await deps.jira.comments(issue.key), me)) continue;
     // Each run needs a clean workspace on the base branch; a previous story's branch is left behind in CI.

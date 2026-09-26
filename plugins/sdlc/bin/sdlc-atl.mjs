@@ -27715,6 +27715,17 @@ var JiraClient = class {
     if (changes.labels !== void 0) fields.labels = changes.labels;
     await this.http.put(`/rest/api/2/issue/${encodeURIComponent(key)}`, { fields });
   }
+  /** Issue entity property (JSON, invisible in the UI): same API on Data Center and Cloud. */
+  async getIssueProperty(key, property) {
+    const r = await this.http.get(`/rest/api/2/issue/${encodeURIComponent(key)}/properties/${encodeURIComponent(property)}`, void 0, [404]);
+    return r?.value;
+  }
+  async setIssueProperty(key, property, value) {
+    await this.http.put(`/rest/api/2/issue/${encodeURIComponent(key)}/properties/${encodeURIComponent(property)}`, value);
+  }
+  async deleteIssueProperty(key, property) {
+    await this.http.request("DELETE", `/rest/api/2/issue/${encodeURIComponent(key)}/properties/${encodeURIComponent(property)}`, { tolerate: [404] });
+  }
   /** Add and remove labels in one atomic edit (no read-modify-write race with people editing the issue). */
   async editLabels(key, add = [], remove = []) {
     const ops = [...add.map((l3) => ({ add: l3 })), ...remove.map((l3) => ({ remove: l3 }))];
@@ -27937,6 +27948,24 @@ async function escalateTicket(opts) {
 // packages/atlassian/src/headless.ts
 var LABELS = { ready: "ai-ready", running: "ai-running", needsInfo: "ai-needs-info", failed: "ai-failed", done: "ai-done", skipped: "ai-skipped" };
 var OURS = Object.values(LABELS);
+var CLAIM_PROPERTY = "sdlc.work.claim";
+function claimIsStale(claim, cfg2 = {}, now = Date.now()) {
+  if (!claim?.at) return true;
+  return now - Date.parse(claim.at) > ((cfg2.timeoutMinutes ?? 45) + 15) * 6e4;
+}
+async function claimStory(jira, key, cfg2, build) {
+  const fresh = await jira.getIssue(key, "labels,status");
+  if (!fresh) return { ok: false, reason: "issue not found" };
+  const held = await jira.getIssueProperty(key, CLAIM_PROPERTY);
+  if (held && !claimIsStale(held, cfg2)) return { ok: false, reason: `another run holds it since ${held.at}${held.build ? ` (${held.build})` : ""}` };
+  if (!held && (fresh.fields.labels ?? []).includes(LABELS.running)) return { ok: false, reason: `labelled ${LABELS.running} by a run without a claim; remove the label to retry` };
+  const claim = { id: `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`, at: (/* @__PURE__ */ new Date()).toISOString(), ...build ? { build } : {} };
+  await jira.setIssueProperty(key, CLAIM_PROPERTY, claim);
+  await new Promise((r) => setTimeout(r, (cfg2.claimSettleSeconds ?? 5) * 1e3));
+  const now = await jira.getIssueProperty(key, CLAIM_PROPERTY);
+  if (now?.id !== claim.id) return { ok: false, reason: `another run claimed it at the same time${now?.build ? ` (${now.build})` : ""}` };
+  return { ok: true, claim };
+}
 function pivPaths(key, summary) {
   const slug = `${key.toLowerCase()}-${slugify(summary) || "work"}`;
   return { plan: `.claude/plans/${slug}.md`, report: `.claude/execution-reports/${slug}.md` };
@@ -28056,6 +28085,27 @@ async function workTicket(key, deps, opts = {}) {
   if (off) return { key, outcome: "disabled", reason: off };
   const issue = await jira.getIssue(key, "*navigable,comment");
   if (!issue) throw new Error(`Issue ${key} not found`);
+  const claimed = await claimStory(jira, key, cfg2, deps.buildUrl);
+  if (!claimed.ok) {
+    log(`${key}: busy, ${claimed.reason}`);
+    return { key, outcome: "busy", reason: claimed.reason };
+  }
+  const release = async () => {
+    const current = await jira.getIssueProperty(key, CLAIM_PROPERTY).catch(() => void 0);
+    if (current?.id === claimed.claim.id) await jira.deleteIssueProperty(key, CLAIM_PROPERTY).catch(() => void 0);
+  };
+  try {
+    return await workClaimed(key, issue, deps, opts);
+  } finally {
+    await release();
+  }
+}
+async function workClaimed(key, issue, deps, opts) {
+  const { jira, root: root2, config } = deps;
+  const cfg2 = config.work ?? {};
+  const log = deps.log ?? (() => {
+  });
+  const build = deps.buildUrl ? ` ([build](${deps.buildUrl}))` : "";
   if (!opts.force) {
     const why = ineligibility(issue, cfg2, cfg2.maxPoints !== void 0 ? await storyPoints(jira, issue) : void 0);
     if (why.length) {
@@ -28204,7 +28254,8 @@ ${tail(output)}
 }
 function defaultJql(config) {
   const projects = config.jira?.projects?.length ? `project in (${config.jira.projects.join(", ")}) AND ` : "";
-  return `${projects}labels in (${LABELS.ready}, ${LABELS.needsInfo}) AND labels not in (${LABELS.running}) AND statusCategory != Done ORDER BY priority DESC, created ASC`;
+  const staleMinutes = (config.work?.timeoutMinutes ?? 45) + 15;
+  return `${projects}statusCategory != Done AND ((labels in (${LABELS.ready}, ${LABELS.needsInfo}) AND labels not in (${LABELS.running})) OR (labels = ${LABELS.running} AND updated <= "-${staleMinutes}m")) ORDER BY priority DESC, created ASC`;
 }
 function answered(comments, me2) {
   const isMe = (a) => me2.accountId && a.accountId === me2.accountId || !!me2.name && a.name === me2.name;
@@ -28221,7 +28272,7 @@ async function pollAndWork(deps) {
   const me2 = await deps.jira.myself();
   const results = [];
   for (const issue of found) {
-    if (results.length >= (cfg2.maxPerRun ?? 1)) break;
+    if (results.filter((r) => r.outcome !== "busy").length >= (cfg2.maxPerRun ?? 1)) break;
     const labels = issue.fields.labels ?? [];
     if (labels.includes(LABELS.needsInfo) && !labels.includes(LABELS.ready) && !answered(await deps.jira.comments(issue.key), me2)) continue;
     results.push(await workTicket(issue.key, deps));

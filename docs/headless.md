@@ -64,6 +64,16 @@ brief. Nothing is ever merged or pushed to the base branch: people review the dr
   (Copilot CLI: `COPILOT_GITHUB_TOKEN`, a bot account's token with Copilot access).
 - The clone must be able to push: `git config http.extraHeader "Authorization: Bearer $BITBUCKET_TOKEN"`.
 
+## Several jobs, one Jira
+
+Run one CI job per repository, each with a query (`work.jql`, or `jira.projects`) that selects only that repo's
+stories, e.g. by component. If queries overlap anyway, the **claim check** keeps a story to one runner: each run
+re-reads the story, writes a claim (an invisible issue property, `sdlc.work.claim`, with its build link), waits
+(`work.claimSettleSeconds`, default 5) and reads it back. Only the last write survives, so exactly one runner
+proceeds; the others report the story as `busy` and move on. The claim is released when the run ends. A runner
+that dies leaves its claim behind: after the time limit plus 15 minutes it counts as stale, the poll query picks
+the story up again, and the next run takes it over.
+
 ## Guardrails
 
 - **A bot account** for Jira, Bitbucket and Copilot with the least permissions that work; no production secrets on
