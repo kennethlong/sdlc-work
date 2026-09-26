@@ -124,7 +124,8 @@
       "issueKey": "SCRUM-181"
     },
     "D-6": {
-      "issueKey": "SCRUM-182"
+      "issueKey": "SCRUM-182",
+      "verificationPageId": "2883621"
     },
     "D-7": {
       "issueKey": "SCRUM-183"
@@ -156,19 +157,24 @@
       "verificationPageId": "1998940"
     },
     "W-1": {
-      "issueKey": "SCRUM-294"
+      "issueKey": "SCRUM-294",
+      "verificationPageId": "2359466"
     },
     "W-4": {
-      "issueKey": "SCRUM-295"
+      "issueKey": "SCRUM-295",
+      "verificationPageId": "2130181"
     },
     "W-2": {
-      "issueKey": "SCRUM-296"
+      "issueKey": "SCRUM-296",
+      "verificationPageId": "2195558"
     },
     "W-3": {
-      "issueKey": "SCRUM-297"
+      "issueKey": "SCRUM-297",
+      "verificationPageId": "2130159"
     },
     "W-5": {
-      "issueKey": "SCRUM-298"
+      "issueKey": "SCRUM-298",
+      "verificationPageId": "1999111"
     }
   },
   "breakdownPageId": "491549",
