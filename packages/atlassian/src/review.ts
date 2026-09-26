@@ -36,7 +36,9 @@ export function readReview(path: string): Review {
   const text = readFileSync(path, 'utf8').replace(/^﻿/, '').replace(/\r\n/g, '\n');
   const m = text.match(/^---\n([\s\S]*?)\n---\n?/);
   if (!m) throw new Error(`${path}: missing YAML front matter with findings`);
-  const meta = (parseYaml(m[1]!) ?? {}) as { base?: string; head?: string; verdict?: string; findings?: Partial<Finding>[] };
+  // A short SHA like 1234567 or 12e4567 would parse as a number; commit and branch names are always strings.
+  const front = m[1]!.replace(/^(head|base):[ \t]*([^'"\s#][^\s#]*)[ \t]*$/gm, '$1: "$2"');
+  const meta = (parseYaml(front) ?? {}) as { base?: string; head?: string; verdict?: string; findings?: Partial<Finding>[] };
   const findings = (meta.findings ?? []).map((f, i): Finding => {
     const severity = String(f.severity ?? '').toLowerCase() as Finding['severity'];
     if (!SEVERITIES.includes(severity)) throw new Error(`${path}: finding ${i + 1} has severity "${f.severity}" (expected ${SEVERITIES.join('|')})`);

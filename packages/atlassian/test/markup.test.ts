@@ -39,6 +39,26 @@ describe('markdownToJiraWiki', () => {
     expect(jiraWikiToMarkdown(w)).toBe('Call `GET /reports/{id}/export.csv` or `a[0] < b`.');
   });
 
+  it('escapes text that Jira would read as markup', () => {
+    expect(markdownToJiraWiki('Use {placeholder} and [not a link] or a|b')).toBe('Use \\{placeholder\\} and \\[not a link\\] or a\\|b');
+    expect(markdownToJiraWiki('Run it with -v and -q')).toBe('Run it with \\-v and \\-q');
+    expect(markdownToJiraWiki('Pass \\*args here')).toBe('Pass \\*args here');
+    expect(markdownToJiraWiki('Wow!great')).toBe('Wow\\!great');
+    expect(markdownToJiraWiki('\\#1 priority')).toBe('\\#1 priority');
+  });
+
+  it('leaves ordinary punctuation alone', () => {
+    for (const s of ['snake_case_name stays', 'a - b - c', '2 * 3 = 6', 'Done! Next.', 'C++ and x^2 are fine']) {
+      expect(markdownToJiraWiki(s)).toBe(s);
+    }
+  });
+
+  it('round-trips escaped text back to the same markdown', () => {
+    for (const s of ['Use {placeholder} and [not a link] or a|b', 'Run it with -v and -q', 'a - b - c']) {
+      expect(jiraWikiToMarkdown(markdownToJiraWiki(s))).toBe(s);
+    }
+  });
+
   it('converts nested and ordered lists', () => {
     expect(wiki).toContain('* one\n* two\n** nested');
     expect(wiki).toContain('# first\n# second');

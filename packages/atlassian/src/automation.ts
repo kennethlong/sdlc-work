@@ -6,9 +6,10 @@
  * planning artifact" is exactly when progress may have changed. The hook runs `sync` in the background, never
  * blocks or fails the commit, and logs to `.sdlc/sync.log`.
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { tryLock } from './lock.ts';
 
 const START = '# >>> sdlc-atl sync >>>';
 const END = '# <<< sdlc-atl sync <<<';
@@ -17,7 +18,7 @@ export const WATCHED = String.raw`^(\.planning/|\.claude/(plans|execution-report
 
 function hookPath(root: string): string {
   const dir = execFileSync('git', ['rev-parse', '--git-path', 'hooks'], { cwd: root, encoding: 'utf8' }).trim();
-  return join(root, dir, 'post-commit');
+  return resolve(root, dir, 'post-commit'); // `dir` is absolute when core.hooksPath is
 }
 
 /** Shell-quoted command that runs this CLI (node + script), so the hook doesn't depend on PATH. */
@@ -73,13 +74,11 @@ function replaceBlock(text: string, block: string): string {
 }
 
 /**
- * Cross-process lock so overlapping hook runs don't race (two quick commits). A lock older than `staleMs` is
- * assumed dead (crashed run) and taken over.
+ * Cross-process lock so overlapping hook runs don't race (two quick commits): the second run skips ('locked').
+ * A lock held by a live process is never taken over; one left by a crashed run is (see lock.ts).
  */
 export function withLock<T>(root: string, fn: () => Promise<T>, staleMs = 10 * 60_000): Promise<T | 'locked'> {
-  const lock = join(root, '.sdlc', 'sync.lock');
-  mkdirSync(dirname(lock), { recursive: true });
-  if (existsSync(lock) && Date.now() - statSync(lock).mtimeMs < staleMs) return Promise.resolve('locked');
-  writeFileSync(lock, String(process.pid));
-  return fn().finally(() => rmSync(lock, { force: true }));
+  const release = tryLock(join(root, '.sdlc', 'sync.lock'), staleMs);
+  if (!release) return Promise.resolve('locked');
+  return fn().finally(release);
 }

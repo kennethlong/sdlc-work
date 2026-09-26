@@ -58,6 +58,8 @@ const { values: opt, positionals } = parseArgs({
     draft: { type: 'boolean', default: false },
     gate: { type: 'boolean', default: false },
     key: { type: 'string' },
+    branch: { type: 'string' },
+    pr: { type: 'string' },
     'issue-type': { type: 'string' },
     'dry-run': { type: 'boolean', default: false },
     json: { type: 'boolean', default: false },
@@ -137,6 +139,7 @@ try {
           root,
           state,
           transitions: cfg.jira?.transitions,
+          hold: cfg.jira?.hold,
           confluenceSpace: opt.space ?? cfg.confluence?.space,
           dryRun: opt['dry-run'],
           doneWhen: cfg.jira?.doneWhen,
@@ -152,6 +155,9 @@ try {
         const changes = [...result.items, ...result.tickets].filter((i) => i.transition.action === 'moved' || ['created', 'updated'].includes(i.report?.action ?? ''));
         for (const i of changes) console.log(`${new Date().toISOString()} ${i.key} ${i.status}: ${i.transition.action === 'moved' ? `-> ${i.transition.to}` : ''} ${i.report ? `report ${i.report.action}` : ''}`.trim());
       } else out(result, () => formatSync(result, opt['dry-run']!));
+      // Errors go to stderr in every mode (the hook's log keeps them), and fail the command.
+      for (const i of [...result.items, ...result.tickets].filter((x) => x.error)) console.error(`${new Date().toISOString()} ${i.key}: sync failed: ${i.error}`);
+      if (result.errors) process.exitCode = 1;
       break;
     }
 
@@ -182,7 +188,10 @@ try {
         draft: opt.draft,
         dryRun: opt['dry-run'],
         reviewStatus: cfg.jira?.transitions?.review,
+        branch: opt.branch,
+        projects: cfg.jira?.projects,
       });
+      for (const w of r.warnings ?? []) console.error(`warning: ${w}`);
       out(r, () => `${r.action}: ${r.pr?.url ?? '(new PR)'}\n  title: ${r.title}${r.key ? `\n  jira: ${r.key}` : ''}${opt['dry-run'] ? `\n--- body ---\n${r.body}` : ''}`);
       break;
     }
@@ -196,7 +205,7 @@ try {
       } catch {
         jira = undefined;
       }
-      const r = await publishReview({ root, host: resolveHost(root, { envFile: opt.env }), jira, file: resolve(file), base: opt.base ?? cfg.git?.base });
+      const r = await publishReview({ root, host: resolveHost(root, { envFile: opt.env }), jira, file: resolve(file), base: opt.base ?? cfg.git?.base, branch: opt.branch, prId: opt.pr, projects: cfg.jira?.projects });
       out(r, () =>
         [
           `review ${r.verdict}: ${Object.entries(r.counts).filter(([, n]) => n).map(([s, n]) => `${n} ${s}`).join(', ') || 'no findings'}`,

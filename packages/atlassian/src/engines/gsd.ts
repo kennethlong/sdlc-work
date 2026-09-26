@@ -30,12 +30,16 @@ export class GsdEngine implements Engine {
 
   nextSteps(key: string, summary: string, isBug: boolean): string[] {
     // The quick task's description starts with the key, so its directory slug contains it (that's the link).
-    return [
-      ...(isBug ? [`\`/rca ${key}\`: root cause -> \`docs/rca/${key}.md\`, then \`sdlc-atl publish-rca ${key}\``] : []),
-      `\`/gsd-quick --validate "${key}: ${isBug ? 'fix ' : ''}${summary.replace(/"/g, "'")}"\`, pointing the planner at \`.sdlc/tickets/${key}.md\``,
-      ...(isBug ? ['The fix must add a regression test (and a rule, so the class of bug cannot recur)'] : []),
-      '`sdlc-atl sync`: moves the Jira issue and publishes the verification',
-    ];
+    return isBug
+      ? [
+          `\`/sdlc:rca ${key}\`: root cause -> \`docs/rca/${key}.md\`, published to Confluence`,
+          `\`/sdlc:fix ${key}\`: regression test first, then the fix as a GSD quick task (\`/gsd-quick --validate "${key}: fix ..."\`) and the prevention rule`,
+          '`/sdlc:sync`: moves the Jira issue and publishes the verification',
+        ]
+      : [
+          `\`/gsd-quick --validate "${key}: ${summary.replace(/"/g, "'")}"\`, pointing the planner at \`.sdlc/tickets/${key}.md\``,
+          '`/sdlc:sync`: moves the Jira issue and publishes the verification',
+        ];
   }
 
   detect(root: string) {

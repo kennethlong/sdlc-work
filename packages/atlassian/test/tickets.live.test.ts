@@ -91,7 +91,7 @@ describe.each(ENGINE_CASES)('Track B (live, $name engine)', (ec) => {
     if (!hasBug) ctx.skip(`project ${TEST_PROJECT} has no Bug issue type`);
     const imp = await importTicket({ jira, root, key: bug, engine: ec.engine(), state: state() });
     expect(imp.isBug).toBe(true);
-    expect(readFileSync(imp.brief, 'utf8')).toContain(`/rca ${bug}`);
+    expect(readFileSync(imp.brief, 'utf8')).toContain(`/sdlc:rca ${bug}`);
 
     mkdirSync(join(root, 'docs', 'rca'), { recursive: true });
     const rcaFile = join(root, 'docs', 'rca', `${bug}.md`);
@@ -121,7 +121,7 @@ describe.each(ENGINE_CASES)('Track B (live, $name engine)', (ec) => {
     expect(first.warnings.join(' ')).toMatch(/Prevention/);
     const comment = (await jira.comments(bug)).at(-1)!.body;
     expect(comment).toContain('Root cause analysis');
-    expect(comment).toContain('{{rows[0]}}');
+    expect(comment).toContain('{{rows\\[0\\]}}'); // brackets escaped so Jira doesn't read a link
     expect(comment).toContain('Derive headers from the report schema');
 
     const again = await publishRca({ jira, confluence, root, key: bug, spaceKey: TEST_SPACE, state: state() });

@@ -45,10 +45,10 @@ Then run `/sdlc:setup` in a repo. See [plugins/sdlc/README.md](plugins/sdlc/READ
 ```powershell
 npm install
 npm run typecheck
-npm test                 # unit + live (live tests skip when no Jira/Confluence is configured)
-npm run test:live        # only the integration tests against infra/atlassian-dc
-# live suites against your own instance (e.g. Cloud) instead of the local stack:
-#   $env:SDLC_ATLASSIAN_ENV='user'; $env:SDLC_TEST_PROJECT='SCRUM'; $env:SDLC_TEST_SPACE='SD'; npm run test:live
+npm test                 # unit tests only (never touches Jira/Confluence)
+npm run test:live        # integration tests against the local stack (infra/atlassian-dc); refuses other URLs
+# live suites against another instance (e.g. the Cloud test site): opt in explicitly
+#   $env:SDLC_ATLASSIAN_ENV='user'; $env:SDLC_TEST_PROJECT='SCRUM'; $env:SDLC_TEST_SPACE='SD'; $env:SDLC_LIVE_ALLOW_REMOTE='1'; npm run test:live
 # live GitHub PR/review suite (opt-in, needs an existing throwaway repo + gh login):
 #   $env:SDLC_GITHUB_TEST_REPO='owner/repo'; npm run test:live
 npm run bundle           # rebuild plugins/sdlc/bin after changing packages/atlassian (commit the result)

@@ -22,6 +22,7 @@ The reference implementation is [`ai-native-starter-pack`](https://github.com/co
 - **Portability:** capabilities are Agent Skills (`SKILL.md`) and MCP servers, not Claude-only features.
 - **Atlassian:** target Jira/Confluence **Data Center** with PAT auth. Keep interfaces product-agnostic so Cloud
   can follow.
-- **Tests:** `npm test` (unit + live). Live tests run against the local stack (`infra/atlassian-dc`,
-  `./dc.ps1 up`) and clean up what they create.
+- **Tests:** `npm test` runs the unit tests. `npm run test:live` runs the integration tests against the local
+  stack (`infra/atlassian-dc`, `./dc.ps1 up`); they clean up what they create and refuse non-local URLs unless
+  `SDLC_LIVE_ALLOW_REMOTE=1`.
 - **Docs:** research in `docs/research/`, designs in `docs/design/` (each with a reference comparison).

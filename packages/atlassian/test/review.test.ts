@@ -3,7 +3,9 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { keyFrom, reviewScope } from '../src/git.ts';
+import { keyFrom, keysIn, reviewScope } from '../src/git.ts';
+import { resolveKey } from '../src/pr.ts';
+import type { JiraClient } from '../src/jira.ts';
 import { GitHubHost, parseRemote } from '../src/hosts/index.ts';
 import { readReview, renderJiraComment, renderPrComment, REVIEW_MARKER } from '../src/review.ts';
 
@@ -141,5 +143,33 @@ describe('GitHub host (contract)', () => {
     expect(await gh.upsertComment(pr, REVIEW_MARKER, 'two')).toBe('updated');
     expect(comments).toHaveLength(1);
     expect(await gh.publishAnnotations(pr, 'sha', { key: 'k', title: 't', passed: true, details: '', findings: [] })).toBe(false);
+  });
+});
+
+describe('review file front matter', () => {
+  it.each(['1234567', '12e4567', '0123456'])('keeps a numeric-looking short SHA (%s) as text', (sha) => {
+    const f = join(tmp(), 'r.md');
+    writeFileSync(f, `---\nbase: main\nhead: ${sha}\nverdict: approved\nfindings: []\n---\nok\n`);
+    expect(readReview(f).head).toBe(sha);
+  });
+});
+
+describe('Jira key resolution', () => {
+  it('lists every candidate in order', () => {
+    expect(keysIn('gsd/phase-03-x: fix utf-8 for SDLC-12, see sdlc-12 and ABC-4')).toEqual(['PHASE-03', 'UTF-8', 'SDLC-12', 'ABC-4']);
+  });
+
+  it('with configured projects, skips look-alikes', async () => {
+    expect(await resolveKey({ texts: ['gsd/phase-03-export', 'a1b2c3 fix utf-8 in SDLC-7 export'], projects: ['sdlc'] })).toBe('SDLC-7');
+    expect(await resolveKey({ texts: ['fix utf-8'], projects: ['SDLC'] })).toBeUndefined();
+  });
+
+  it('without projects, keeps the first candidate that exists in Jira', async () => {
+    const jira = { getIssue: async (k: string) => (k === 'SDLC-7' ? { key: k } : undefined) } as unknown as JiraClient;
+    expect(await resolveKey({ texts: ['phase-03', 'fix UTF-8, then SDLC-7'], jira })).toBe('SDLC-7');
+  });
+
+  it('an explicit key always wins', async () => {
+    expect(await resolveKey({ explicit: 'abc-1', texts: ['SDLC-7'], projects: ['SDLC'] })).toBe('ABC-1');
   });
 });

@@ -10,8 +10,8 @@
   },
   "scripts": {
     "typecheck": "tsc -b",
-    "test": "vitest run",
-    "test:live": "vitest run --project live",
+    "test": "vitest run --project unit",
+    "test:live": "node scripts/test-live.mjs",
     "bundle": "node scripts/bundle.mjs"
   },
   "devDependencies": {

@@ -4,8 +4,11 @@
  * PR), which is a documented deviation: the team lives in Jira/Confluence, so progress should show up there without
  * asking an engineer.
  *
- * Safe to re-run: transitions are no-ops when already there; an issue is never moved *backwards* (e.g. out of
- * Done); report pages are only rewritten when the report changed, and a comment is posted only then.
+ * Safe to re-run: transitions are no-ops when already there; an issue is never moved *backwards*: not out of Done,
+ * not out of any started status (In Review, QA, ... are all "In Progress" to us) while work is unfinished, and not
+ * out of the `hold` statuses; report pages are only rewritten when the report changed, and a comment is posted
+ * only then. Done is reached by status category (a workflow may call it Closed or Resolved), through intermediate
+ * statuses if needed. One issue failing (permissions, a workflow validator) is reported and the rest carry on.
  */
 import type { ConfluenceClient, ConfluencePage } from './confluence.ts';
 import type { JiraClient } from './jira.ts';
@@ -23,7 +26,7 @@ export const DEFAULT_TRANSITIONS: TransitionMap = {
   complete: 'Done',
 };
 
-type TransitionAction = 'moved' | 'already' | 'would-move' | 'kept-done' | 'no-transition' | 'none';
+type TransitionAction = 'moved' | 'already' | 'would-move' | 'kept-done' | 'kept-started' | 'kept-hold' | 'no-transition' | 'none' | 'error';
 type ReportAction = 'created' | 'updated' | 'unchanged' | 'would-publish' | 'skipped-no-space';
 
 export type SyncEntry = {
@@ -34,9 +37,11 @@ export type SyncEntry = {
   jiraStatus?: string;
   transition: { to?: string; action: TransitionAction };
   report?: { action: ReportAction; url?: string };
+  /** Why this issue could not be synced; the others still were. */
+  error?: string;
 };
 
-export type SyncReport = { items: SyncEntry[]; tickets: SyncEntry[]; unfiled: string[] };
+export type SyncReport = { items: SyncEntry[]; tickets: SyncEntry[]; unfiled: string[]; errors: number };
 
 export type SyncOptions = {
   jira: JiraClient;
@@ -55,6 +60,8 @@ export type SyncOptions = {
    */
   doneWhen?: 'verified' | 'merged';
   prState?: (id: string) => Promise<'open' | 'merged' | 'declined' | undefined>;
+  /** Statuses never moved out of except to Done (config `jira.hold`), e.g. ["QA", "Blocked"]. */
+  hold?: string[];
   /** Space for report pages when there is no breakdown page to nest them under (Track B, or unfiled PRD). */
   confluenceSpace?: string;
   dryRun?: boolean;
@@ -65,7 +72,8 @@ export async function syncProgress(opts: SyncOptions): Promise<SyncReport> {
   const transitions = { ...DEFAULT_TRANSITIONS, ...opts.transitions };
   const tickets = Object.entries(state.data.tickets ?? {}).filter(([, t]) => !t.escalatedTo);
   if (!state.data.epic && !tickets.length) throw new Error('Nothing to sync: file a breakdown (file-breakdown) or import a ticket (import) first.');
-  const report: SyncReport = { items: [], tickets: [], unfiled: [] };
+  const report: SyncReport = { items: [], tickets: [], unfiled: [], errors: 0 };
+  const hold = new Set((opts.hold ?? []).map((h) => h.toLowerCase()));
 
   // Track A
   if (breakdown && state.data.epic) {
@@ -77,7 +85,7 @@ export async function syncProgress(opts: SyncOptions): Promise<SyncReport> {
         report.unfiled.push(item.id);
         continue;
       }
-      const entry = await syncOne(key, item.id, item.title, item.status, item.verification, breakdownPage);
+      const entry = await guarded(key, item.id, item.title, item.status, () => syncOne(key, item.id, item.title, item.status, item.verification, breakdownPage));
       if (entry.pageId) state.data.items[item.id] = { ...state.data.items[item.id]!, verificationPageId: entry.pageId };
       report.items.push(strip(entry));
     }
@@ -87,8 +95,10 @@ export async function syncProgress(opts: SyncOptions): Promise<SyncReport> {
   if (tickets.length) {
     if (!opts.engineFor || !opts.root) throw new Error('Ticket sync needs engineFor and root.');
     for (const [key, t] of tickets) {
-      const progress = await opts.engineFor(t.engine).ticketProgress(opts.root, key);
-      const entry = await syncOne(key, key, t.summary ?? key, progress.status, progress.verification, undefined);
+      const entry = await guarded(key, key, t.summary ?? key, 'not_started', async () => {
+        const progress = await opts.engineFor!(t.engine).ticketProgress(opts.root!, key);
+        return syncOne(key, key, t.summary ?? key, progress.status, progress.verification, undefined);
+      });
       if (entry.pageId) state.data.tickets![key] = { ...t, verificationPageId: entry.pageId };
       report.tickets.push(strip(entry));
     }
@@ -96,6 +106,15 @@ export async function syncProgress(opts: SyncOptions): Promise<SyncReport> {
 
   if (!dryRun) state.save();
   return report;
+
+  async function guarded(key: string, id: string, title: string, status: WorkStatus, f: () => Promise<SyncEntry & { pageId?: string }>) {
+    try {
+      return await f();
+    } catch (e) {
+      report.errors++;
+      return { id, title, status, key, transition: { action: 'error' as const }, error: (e as Error).message } as SyncEntry & { pageId?: string };
+    }
+  }
 
   function issueKeyFor(item: WorkItem, children: { key: string; fields: { labels?: string[] } }[]): string | undefined {
     const mapped = state.data.items[item.id]?.issueKey;
@@ -121,7 +140,7 @@ export async function syncProgress(opts: SyncOptions): Promise<SyncReport> {
       status,
       key,
       jiraStatus: issue?.fields.status?.name,
-      transition: await moveForward(key, issue?.fields.status, await targetFor(key, status)),
+      transition: await moveForward(key, issue?.fields.status, await targetFor(key, status), status),
     };
     if (v) {
       const r = await publishVerification(key, title, v, parent);
@@ -131,13 +150,21 @@ export async function syncProgress(opts: SyncOptions): Promise<SyncReport> {
     return entry;
   }
 
-  async function moveForward(key: string, current: { name: string; statusCategory?: { key: string } } | undefined, target?: string) {
+  async function moveForward(key: string, current: { name: string; statusCategory?: { key: string } } | undefined, target: string | undefined, status: WorkStatus) {
     if (!target) return { action: 'none' as const };
     if (current?.name.toLowerCase() === target.toLowerCase()) return { to: target, action: 'already' as const };
     // Never pull work back out of Done (someone closed it deliberately, or a later re-verification regressed).
     if (current?.statusCategory?.key === 'done') return { to: target, action: 'kept-done' as const };
+    const toDone = status === 'complete' && target.toLowerCase() === transitions.complete?.toLowerCase();
+    if (!toDone) {
+      // Unfinished work only ever needs "started": In Review, QA etc. already are (moving them would go backwards).
+      if (status !== 'complete' && current?.statusCategory?.key === 'indeterminate') return { to: target, action: 'kept-started' as const };
+      if (current && hold.has(current.name.toLowerCase())) return { to: target, action: 'kept-hold' as const };
+    }
     if (dryRun) return { to: target, action: 'would-move' as const };
-    return { to: target, action: (await jira.transitionTo(key, target)) ? ('moved' as const) : ('no-transition' as const) };
+    const category = toDone ? ('done' as const) : status !== 'complete' ? ('indeterminate' as const) : undefined;
+    const r = await jira.moveTo(key, target, { category });
+    return { to: r.status || target, action: r.action === 'no-transition' ? ('no-transition' as const) : r.action === 'already' ? ('already' as const) : ('moved' as const) };
   }
 
   async function publishVerification(key: string, title: string, v: Verification, parent: ConfluencePage | undefined): Promise<{ action: ReportAction; url?: string; pageId?: string }> {

@@ -15,6 +15,19 @@ export type JiraIssue = {
   };
 };
 
+export type StatusCategory = 'new' | 'indeterminate' | 'done';
+/** Workflow order of Jira's fixed status categories (To Do < In Progress < Done). */
+export const RANK: Record<StatusCategory, number> = { new: 1, indeterminate: 2, done: 3 };
+
+export type JiraTransition = {
+  id: string;
+  name: string;
+  to: { name: string; statusCategory?: { key: string } };
+  fields?: Record<string, { required?: boolean; allowedValues?: { name: string }[] } | undefined> & { resolution?: { allowedValues?: { name: string }[] } };
+};
+
+export type MoveResult = { action: 'moved' | 'already' | 'no-transition'; status: string; hops: string[] };
+
 export type NewIssue = {
   project: string;
   issueType: string;
@@ -153,10 +166,48 @@ export class JiraClient {
     await this.http.request('DELETE', `/rest/api/2/issue/${encodeURIComponent(key)}`, { query: { deleteSubtasks }, tolerate: [404] });
   }
 
-  transitions(key: string) {
+  transitions(key: string): Promise<JiraTransition[]> {
     return this.http
-      .get<{ transitions: { id: string; name: string; to: { name: string } }[] }>(`/rest/api/2/issue/${encodeURIComponent(key)}/transitions`)
+      .get<{ transitions: JiraTransition[] }>(`/rest/api/2/issue/${encodeURIComponent(key)}/transitions`, { expand: 'transitions.fields' })
       .then((r) => r.transitions);
+  }
+
+  /**
+   * Walk the workflow towards `status`, which real workflows name differently ("Done" may be "Closed" or
+   * "Resolved"): take a transition to that status by name, else (when `category` is given) to any status in that
+   * category, else a step that makes progress towards it (To Do -> In Progress -> Done), up to `maxHops`. Never
+   * moves backwards (to a lower status category). Sets Resolution when the done transition asks for one.
+   */
+  async moveTo(key: string, status: string, opts: { category?: StatusCategory; maxHops?: number } = {}): Promise<MoveResult> {
+    const want = status.toLowerCase();
+    const maxHops = opts.maxHops ?? 3;
+    const rank = (s?: { statusCategory?: { key: string } }) => RANK[s?.statusCategory?.key as StatusCategory] ?? 0;
+    const hops: string[] = [];
+    for (;;) {
+      const issue = await this.getIssue(key, 'status');
+      if (!issue) throw new Error(`Issue ${key} not found`);
+      const cur = issue.fields.status!;
+      // Arrived: the named status, or (for a category target) any status in that category.
+      if (cur.name.toLowerCase() === want || (opts.category && cur.statusCategory?.key === opts.category)) {
+        return { action: hops.length ? 'moved' : 'already', status: cur.name, hops };
+      }
+      if (hops.length >= maxHops) return { action: hops.length ? 'moved' : 'no-transition', status: cur.name, hops };
+      const forward = (await this.transitions(key)).filter((t) => rank(t.to) >= rank(cur)); // never backwards
+      const goal = opts.category ? RANK[opts.category] : undefined;
+      const t =
+        forward.find((x) => x.to.name.toLowerCase() === want) ??
+        forward.find((x) => x.name.toLowerCase() === want) ??
+        (opts.category ? forward.find((x) => x.to.statusCategory?.key === opts.category) : undefined) ??
+        (goal !== undefined ? forward.find((x) => rank(x.to) > rank(cur) && rank(x.to) <= goal) : undefined);
+      if (!t) return { action: hops.length ? 'moved' : 'no-transition', status: cur.name, hops };
+      const resolution = t.fields?.resolution;
+      const fields =
+        resolution && t.to.statusCategory?.key === 'done'
+          ? { resolution: { name: resolution.allowedValues?.find((v) => /^(done|fixed)$/i.test(v.name))?.name ?? resolution.allowedValues?.[0]?.name ?? 'Done' } }
+          : undefined;
+      await this.http.post(`/rest/api/2/issue/${encodeURIComponent(key)}/transitions`, { transition: { id: t.id }, ...(fields ? { fields } : {}) });
+      hops.push(t.to.name);
+    }
   }
 
   /**

@@ -26,9 +26,18 @@ export function defaultBase(cwd: string, explicit?: string): string {
   return 'main';
 }
 
-/** First Jira-style key in a branch name or text: "feature/SDLC-12-export" -> "SDLC-12". */
+/**
+ * Jira-style keys in a branch name or text, in order: "feature/SDLC-12-export" -> ["SDLC-12"]. These are only
+ * candidates ("fix utf-8" yields UTF-8, "gsd/phase-03" yields PHASE-03): check them with `resolveKey`.
+ */
+export function keysIn(text: string): string[] {
+  const found = [...text.matchAll(/(?:^|[^A-Za-z0-9])([A-Za-z][A-Za-z0-9]+-\d+)(?=$|[^0-9])/g)].map((m) => m[1]!.toUpperCase());
+  return [...new Set(found)];
+}
+
+/** First candidate key in a text (unvalidated; see `keysIn`). */
 export function keyFrom(text: string): string | undefined {
-  return text.match(/(?:^|[^A-Za-z0-9])([A-Za-z][A-Za-z0-9]+-\d+)(?=$|[^0-9])/)?.[1]?.toUpperCase();
+  return keysIn(text)[0];
 }
 
 export type ReviewScope = {
@@ -51,11 +60,12 @@ export type ReviewScope = {
  * What a review covers: everything committed on the branch since it left the base (`base...HEAD`), not just the
  * working tree. (The reference's review used `git diff HEAD`, which misses committed work.)
  */
-export function reviewScope(cwd: string, base?: string): ReviewScope {
+export function reviewScope(cwd: string, base?: string, branchName?: string): ReviewScope {
   const b = defaultBase(cwd, base);
   const baseRef = tryGit(cwd, 'rev-parse', '--verify', '--quiet', `origin/${b}`) ? `origin/${b}` : b;
   const mergeBase = git(cwd, 'merge-base', baseRef, 'HEAD');
-  const branch = currentBranch(cwd);
+  // CI checks out a detached commit, where the branch has to be passed in (--branch).
+  const branch = branchName ?? currentBranch(cwd);
   const files = git(cwd, 'diff', '--name-status', `${mergeBase}...HEAD`)
     .split('\n')
     .filter(Boolean)

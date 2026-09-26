@@ -25029,21 +25029,71 @@ var require_dist = __commonJS({
 });
 
 // packages/atlassian/src/cli.ts
-import { existsSync as existsSync8, mkdirSync as mkdirSync4, readFileSync as readFileSync8, writeFileSync as writeFileSync4 } from "node:fs";
+import { existsSync as existsSync8, mkdirSync as mkdirSync5, readFileSync as readFileSync9, writeFileSync as writeFileSync4 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { basename as basename2, dirname as dirname5, join as join8, resolve as resolve2 } from "node:path";
+import { basename as basename2, dirname as dirname6, join as join8, resolve as resolve3 } from "node:path";
 import { parseArgs } from "node:util";
 
 // packages/atlassian/src/automation.ts
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync as mkdirSync2, readFileSync as readFileSync2, rmSync as rmSync2, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { dirname, join } from "node:path";
+import { dirname as dirname2, join, resolve } from "node:path";
+
+// packages/atlassian/src/lock.ts
+import { closeSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeSync } from "node:fs";
+import { dirname } from "node:path";
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === "EPERM";
+  }
+}
+function tryLock(path, staleMs = 10 * 6e4) {
+  mkdirSync(dirname(path), { recursive: true });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const fd = openSync(path, "wx");
+      writeSync(fd, String(process.pid));
+      closeSync(fd);
+      return () => rmSync(path, { force: true });
+    } catch (e) {
+      if (e.code !== "EEXIST") throw e;
+    }
+    if (!isAbandoned(path, staleMs)) return void 0;
+    rmSync(path, { force: true });
+  }
+  return void 0;
+}
+function isAbandoned(path, staleMs) {
+  try {
+    const pid = Number(readFileSync(path, "utf8").trim());
+    if (pid) return !pidAlive(pid);
+    return Date.now() - statSync(path).mtimeMs >= staleMs;
+  } catch {
+    return true;
+  }
+}
+function lockSync(path, waitMs = 1e4) {
+  const until = Date.now() + waitMs;
+  const nap = new Int32Array(new SharedArrayBuffer(4));
+  for (; ; ) {
+    const release = tryLock(path);
+    if (release) return release;
+    if (Date.now() >= until) throw new Error(`Timed out waiting for ${path} (held by another sdlc-atl process).`);
+    Atomics.wait(nap, 0, 0, 50);
+  }
+}
+
+// packages/atlassian/src/automation.ts
 var START = "# >>> sdlc-atl sync >>>";
 var END = "# <<< sdlc-atl sync <<<";
 var WATCHED = String.raw`^(\.planning/|\.claude/(plans|execution-reports)/|docs/(specs|rca)/)`;
 function hookPath(root2) {
   const dir = execFileSync("git", ["rev-parse", "--git-path", "hooks"], { cwd: root2, encoding: "utf8" }).trim();
-  return join(root2, dir, "post-commit");
+  return resolve(root2, dir, "post-commit");
 }
 function selfCommand(script = process.argv[1]) {
   const q2 = (s) => `"${s.replace(/\\/g, "/").replace(/"/g, '\\"')}"`;
@@ -25060,11 +25110,11 @@ function installHook(root2, command2 = selfCommand()) {
     "fi",
     END
   ].join("\n");
-  const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
+  const existing = existsSync(path) ? readFileSync2(path, "utf8") : "";
   const action = existing.includes(START) ? "updated" : "installed";
   const body = existing.includes(START) ? replaceBlock(existing, block2) : `${existing.trim() ? existing.trimEnd() + "\n\n" : "#!/bin/sh\n\n"}${block2}
 `;
-  mkdirSync(dirname(path), { recursive: true });
+  mkdirSync2(dirname2(path), { recursive: true });
   writeFileSync(path, body);
   try {
     chmodSync(path, 493);
@@ -25075,16 +25125,16 @@ function installHook(root2, command2 = selfCommand()) {
 function uninstallHook(root2) {
   const path = hookPath(root2);
   if (!existsSync(path)) return false;
-  const text = readFileSync(path, "utf8");
+  const text = readFileSync2(path, "utf8");
   if (!text.includes(START)) return false;
   const rest2 = replaceBlock(text, "").replace(/\n{3,}/g, "\n\n").trim();
-  if (!rest2 || rest2 === "#!/bin/sh") rmSync(path);
+  if (!rest2 || rest2 === "#!/bin/sh") rmSync2(path);
   else writeFileSync(path, rest2 + "\n");
   return true;
 }
 function hookInstalled(root2) {
   const path = hookPath(root2);
-  return existsSync(path) && readFileSync(path, "utf8").includes(START);
+  return existsSync(path) && readFileSync2(path, "utf8").includes(START);
 }
 function replaceBlock(text, block2) {
   const s = text.indexOf(START);
@@ -25092,25 +25142,23 @@ function replaceBlock(text, block2) {
   return text.slice(0, s) + block2 + text.slice(e + END.length);
 }
 function withLock(root2, fn2, staleMs = 10 * 6e4) {
-  const lock = join(root2, ".sdlc", "sync.lock");
-  mkdirSync(dirname(lock), { recursive: true });
-  if (existsSync(lock) && Date.now() - statSync(lock).mtimeMs < staleMs) return Promise.resolve("locked");
-  writeFileSync(lock, String(process.pid));
-  return fn2().finally(() => rmSync(lock, { force: true }));
+  const release = tryLock(join(root2, ".sdlc", "sync.lock"), staleMs);
+  if (!release) return Promise.resolve("locked");
+  return fn2().finally(release);
 }
 
 // packages/atlassian/src/confluence.ts
 import { createHash } from "node:crypto";
 
 // packages/atlassian/src/config.ts
-import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
+import { existsSync as existsSync2, readFileSync as readFileSync3 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname as dirname2, join as join2, resolve } from "node:path";
+import { dirname as dirname3, join as join2, resolve as resolve2 } from "node:path";
 function envLookup(opts = {}) {
   const userFile = join2(homedir(), ".sdlc", "atlassian.env");
   const explicit = process.env.SDLC_ATLASSIAN_ENV === "user" ? userFile : process.env.SDLC_ATLASSIAN_ENV;
   const file = opts.envFile ?? explicit ?? findLocalStackEnv(opts.cwd ?? process.cwd()) ?? (existsSync2(userFile) ? userFile : void 0);
-  const fromFile = file && existsSync2(file) ? parseEnv(readFileSync2(file, "utf8")) : {};
+  const fromFile = file && existsSync2(file) ? parseEnv(readFileSync3(file, "utf8")) : {};
   return (k2) => process.env[k2] || fromFile[k2] || "";
 }
 function loadConfig(opts = {}) {
@@ -25151,10 +25199,10 @@ function parseEnv(text) {
   return out2;
 }
 function findLocalStackEnv(start) {
-  for (let dir = resolve(start); ; dir = dirname2(dir)) {
+  for (let dir = resolve2(start); ; dir = dirname3(dir)) {
     const candidate = join2(dir, "infra", "atlassian-dc", ".env");
     if (existsSync2(candidate)) return candidate;
-    if (dirname2(dir) === dir) return void 0;
+    if (dirname3(dir) === dir) return void 0;
   }
 }
 
@@ -25164,8 +25212,8 @@ var AtlassianError = class extends Error {
   method;
   path;
   body;
-  constructor(method, path, status, body) {
-    super(`${method} ${path} -> ${status}: ${describe(body)}`);
+  constructor(method, path, status, body, baseUrl) {
+    super(`${method} ${path} -> ${status}: ${describe(body)}${authHint(status, body, baseUrl)}`);
     this.name = "AtlassianError";
     this.method = method;
     this.path = path;
@@ -25182,40 +25230,79 @@ function describe(body) {
   }
   return String(body ?? "").slice(0, 300);
 }
+function authHint(status, body, baseUrl) {
+  const where = baseUrl ? ` for ${baseUrl}` : "";
+  if (status === 401) return ` (authentication failed${where}: the token is missing, wrong or expired; create a new one and update ~/.sdlc/atlassian.env)`;
+  if (status === 403 && describe(body).length < 3) return ` (forbidden${where}: the account or token lacks permission for this)`;
+  return "";
+}
+var NetworkError = class extends Error {
+  constructor(method, url, cause, timeoutMs) {
+    super(`${method} ${url.origin}${url.pathname} failed: ${networkReason(cause, timeoutMs)}`, { cause });
+    this.name = "NetworkError";
+  }
+};
+function networkReason(cause, timeoutMs) {
+  const e = cause;
+  if (e?.name === "TimeoutError" || e?.name === "AbortError") return `no response within ${timeoutMs / 1e3}s (VPN or proxy? set SDLC_HTTP_TIMEOUT_MS to wait longer)`;
+  const code = e?.cause?.code ?? "";
+  if (/CERT|SELF_SIGNED|UNABLE_TO_(GET|VERIFY)/.test(code))
+    return `TLS certificate not trusted (${code}). Behind a TLS-inspecting proxy, point NODE_EXTRA_CA_CERTS at your company root certificate (PEM).`;
+  if (code === "ENOTFOUND") return "host not found (check the URL, VPN or DNS)";
+  if (code === "ECONNREFUSED") return "connection refused (is the server up and the port right?)";
+  if (code === "ECONNRESET") return "connection reset (proxy or firewall?)";
+  return `${e?.cause?.message ?? e?.message ?? String(cause)}${code ? ` (${code})` : ""}`;
+}
+var IDEMPOTENT = /* @__PURE__ */ new Set(["GET", "HEAD", "PUT", "DELETE"]);
+var DEFAULT_TIMEOUT_MS = Number(process.env.SDLC_HTTP_TIMEOUT_MS) || 6e4;
 var HttpClient = class {
   baseUrl;
   authorization;
   retries;
   headers;
+  timeoutMs;
   /** `headers` replace the Atlassian defaults (Accept JSON + XSRF bypass), e.g. for GitHub's API. */
   constructor(baseUrl, auth, opts = {}) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
     this.authorization = authHeader(auth);
     this.retries = opts.retries ?? 3;
+    this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.headers = opts.headers ?? { Accept: "application/json", "X-Atlassian-Token": "no-check" };
   }
   async request(method, path, opts = {}) {
     const url = new URL(this.baseUrl + path);
     for (const [k2, v] of Object.entries(opts.query ?? {})) if (v !== void 0) url.searchParams.set(k2, String(v));
+    const idempotent = IDEMPOTENT.has(method.toUpperCase());
+    const backoff = (attempt, retryAfter) => new Promise((r) => setTimeout(r, Number(retryAfter) * 1e3 || 500 * 2 ** attempt));
     for (let attempt = 0; ; attempt++) {
-      const res = await fetch(url, {
-        method,
-        headers: {
-          Authorization: this.authorization,
-          ...this.headers,
-          ...opts.body !== void 0 ? { "Content-Type": opts.contentType ?? "application/json" } : {}
-        },
-        body: opts.body === void 0 ? void 0 : JSON.stringify(opts.body)
-      });
-      if ((res.status === 429 || res.status === 503) && attempt < this.retries) {
-        const wait = Number(res.headers.get("retry-after")) * 1e3 || 500 * 2 ** attempt;
-        await new Promise((r) => setTimeout(r, wait));
+      let res;
+      let text;
+      try {
+        res = await fetch(url, {
+          method,
+          headers: {
+            Authorization: this.authorization,
+            ...this.headers,
+            ...opts.body !== void 0 ? { "Content-Type": opts.contentType ?? "application/json" } : {}
+          },
+          body: opts.body === void 0 ? void 0 : JSON.stringify(opts.body),
+          signal: AbortSignal.timeout(this.timeoutMs)
+        });
+        text = await res.text();
+      } catch (e) {
+        if (idempotent && attempt < this.retries) {
+          await backoff(attempt);
+          continue;
+        }
+        throw new NetworkError(method, url, e, this.timeoutMs);
+      }
+      if ((res.status === 429 || res.status === 503 && idempotent) && attempt < this.retries) {
+        await backoff(attempt, res.headers.get("retry-after"));
         continue;
       }
       if (opts.tolerate?.includes(res.status)) return void 0;
-      const text = await res.text();
       const parsed = text ? safeJson(text) : void 0;
-      if (!res.ok) throw new AtlassianError(method, path, res.status, parsed);
+      if (!res.ok) throw new AtlassianError(method, path, res.status, parsed, this.baseUrl);
       return parsed;
     }
   }
@@ -26576,7 +26663,7 @@ function block(t, listDepth) {
     case "paragraph":
       return inline(t.tokens);
     case "text":
-      return t.tokens ? inline(t.tokens) : t.text;
+      return t.tokens ? inline(t.tokens) : escapeWiki(decode(t.text));
     case "code": {
       const c = t;
       return `{code${c.lang ? `:${c.lang}` : ""}}
@@ -26636,13 +26723,16 @@ function inline(tokens = []) {
       case "br":
         return "\n";
       case "text":
-        return t.tokens ? inline(t.tokens) : decode(t.text);
+        return t.tokens ? inline(t.tokens) : escapeWiki(decode(t.text));
       case "escape":
-        return t.text;
+        return t.text.replace(/^[*_+^~{}[\]|!#-]$/, "\\$&");
       default:
         return "raw" in t ? String(t.raw) : "";
     }
   }).join("");
+}
+function escapeWiki(text) {
+  return text.replace(/[{}[\]|]/g, "\\$&").replace(/!(?=\S)/g, "\\!").replace(/(^|\n)#/g, "$1\\#").replace(/(^|[^\w\\])([*_+^~-])(?=\S)/g, "$1\\$2");
 }
 function decode(s) {
   return s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
@@ -26662,7 +26752,7 @@ function jiraWikiToMarkdown(wiki) {
     const cols = cells.split("||");
     return `| ${cols.join(" | ")} |
 |${cols.map(() => " --- ").join("|")}|`;
-  }).replace(/\{quote\}([\s\S]*?)\{quote\}/g, (_m, body) => body.trim().split("\n").map((l3) => `> ${l3}`).join("\n")).replace(/\{\{((?:\\.|[^}\\])+)\}\}/g, (_m, code) => "`" + code.replace(/\\([{}[\]])/g, "$1") + "`").replace(/\[([^|\]]+)\|([^\]]+)\]/g, "[$1]($2)").replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,:;!?]|$)/gm, "$1**$2**").replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,:;!?]|$)/gm, "$1*$2*").replace(/(^|[\s(])-([^-\n]+)-(?=[\s).,:;!?]|$)/gm, "$1~~$2~~").replace(/^----\s*$/gm, "---");
+  }).replace(/\{quote\}([\s\S]*?)\{quote\}/g, (_m, body) => body.trim().split("\n").map((l3) => `> ${l3}`).join("\n")).replace(/\{\{((?:\\.|[^}\\])+)\}\}/g, (_m, code) => "`" + code.replace(/\\([{}[\]])/g, "$1") + "`").replace(/(?<!\\)\[([^|\]]+)\|([^\]]+)\]/g, "[$1]($2)").replace(/(^|[\s(])\*(\S(?:[^*\n]*\S)?)\*(?=[\s).,:;!?]|$)/gm, "$1**$2**").replace(/(^|[\s(])_(\S(?:[^_\n]*\S)?)_(?=[\s).,:;!?]|$)/gm, "$1*$2*").replace(/(^|[\s(])-(\S(?:[^-\n]*\S)?)-(?=[\s).,:;!?]|$)/gm, "$1~~$2~~").replace(/^----\s*$/gm, "---").replace(/\\([{}[\]|!#+^~-])/g, "$1");
   return s.replace(/\u0000(\d+)\u0000/g, (_m, i) => codeBlocks[Number(i)]).trim();
 }
 function markdownToStorage(md) {
@@ -26795,6 +26885,7 @@ function sourceHash(markdown) {
 }
 
 // packages/atlassian/src/jira.ts
+var RANK = { new: 1, indeterminate: 2, done: 3 };
 var JiraClient = class {
   http;
   flavor;
@@ -26895,7 +26986,36 @@ var JiraClient = class {
     await this.http.request("DELETE", `/rest/api/2/issue/${encodeURIComponent(key)}`, { query: { deleteSubtasks }, tolerate: [404] });
   }
   transitions(key) {
-    return this.http.get(`/rest/api/2/issue/${encodeURIComponent(key)}/transitions`).then((r) => r.transitions);
+    return this.http.get(`/rest/api/2/issue/${encodeURIComponent(key)}/transitions`, { expand: "transitions.fields" }).then((r) => r.transitions);
+  }
+  /**
+   * Walk the workflow towards `status`, which real workflows name differently ("Done" may be "Closed" or
+   * "Resolved"): take a transition to that status by name, else (when `category` is given) to any status in that
+   * category, else a step that makes progress towards it (To Do -> In Progress -> Done), up to `maxHops`. Never
+   * moves backwards (to a lower status category). Sets Resolution when the done transition asks for one.
+   */
+  async moveTo(key, status, opts = {}) {
+    const want = status.toLowerCase();
+    const maxHops = opts.maxHops ?? 3;
+    const rank = (s) => RANK[s?.statusCategory?.key] ?? 0;
+    const hops = [];
+    for (; ; ) {
+      const issue = await this.getIssue(key, "status");
+      if (!issue) throw new Error(`Issue ${key} not found`);
+      const cur = issue.fields.status;
+      if (cur.name.toLowerCase() === want || opts.category && cur.statusCategory?.key === opts.category) {
+        return { action: hops.length ? "moved" : "already", status: cur.name, hops };
+      }
+      if (hops.length >= maxHops) return { action: hops.length ? "moved" : "no-transition", status: cur.name, hops };
+      const forward = (await this.transitions(key)).filter((t2) => rank(t2.to) >= rank(cur));
+      const goal = opts.category ? RANK[opts.category] : void 0;
+      const t = forward.find((x2) => x2.to.name.toLowerCase() === want) ?? forward.find((x2) => x2.name.toLowerCase() === want) ?? (opts.category ? forward.find((x2) => x2.to.statusCategory?.key === opts.category) : void 0) ?? (goal !== void 0 ? forward.find((x2) => rank(x2.to) > rank(cur) && rank(x2.to) <= goal) : void 0);
+      if (!t) return { action: hops.length ? "moved" : "no-transition", status: cur.name, hops };
+      const resolution = t.fields?.resolution;
+      const fields = resolution && t.to.statusCategory?.key === "done" ? { resolution: { name: resolution.allowedValues?.find((v) => /^(done|fixed)$/i.test(v.name))?.name ?? resolution.allowedValues?.[0]?.name ?? "Done" } } : void 0;
+      await this.http.post(`/rest/api/2/issue/${encodeURIComponent(key)}/transitions`, { transition: { id: t.id }, ...fields ? { fields } : {} });
+      hops.push(t.to.name);
+    }
   }
   /**
    * Move an issue to a status (matched by target status name, then by transition name; case-insensitive).
@@ -27086,7 +27206,7 @@ function cyclicItems(items) {
 }
 
 // packages/atlassian/src/engines/index.ts
-import { existsSync as existsSync5, readFileSync as readFileSync4 } from "node:fs";
+import { existsSync as existsSync5, readFileSync as readFileSync5 } from "node:fs";
 import { join as join5 } from "node:path";
 
 // packages/atlassian/src/engines/gsd.ts
@@ -27097,9 +27217,9 @@ import { join as join3 } from "node:path";
 import { promisify } from "node:util";
 
 // packages/atlassian/src/engines/text.ts
-import { readFileSync as readFileSync3 } from "node:fs";
+import { readFileSync as readFileSync4 } from "node:fs";
 function readText(path) {
-  return readFileSync3(path, "utf8").replace(/^﻿/, "").replace(/\r\n/g, "\n");
+  return readFileSync4(path, "utf8").replace(/^﻿/, "").replace(/\r\n/g, "\n");
 }
 
 // packages/atlassian/src/engines/gsd.ts
@@ -27114,11 +27234,13 @@ var GsdEngine = class {
     return gsdTicketProgress(root2, key);
   }
   nextSteps(key, summary, isBug) {
-    return [
-      ...isBug ? [`\`/rca ${key}\`: root cause -> \`docs/rca/${key}.md\`, then \`sdlc-atl publish-rca ${key}\``] : [],
-      `\`/gsd-quick --validate "${key}: ${isBug ? "fix " : ""}${summary.replace(/"/g, "'")}"\`, pointing the planner at \`.sdlc/tickets/${key}.md\``,
-      ...isBug ? ["The fix must add a regression test (and a rule, so the class of bug cannot recur)"] : [],
-      "`sdlc-atl sync`: moves the Jira issue and publishes the verification"
+    return isBug ? [
+      `\`/sdlc:rca ${key}\`: root cause -> \`docs/rca/${key}.md\`, published to Confluence`,
+      `\`/sdlc:fix ${key}\`: regression test first, then the fix as a GSD quick task (\`/gsd-quick --validate "${key}: fix ..."\`) and the prevention rule`,
+      "`/sdlc:sync`: moves the Jira issue and publishes the verification"
+    ] : [
+      `\`/gsd-quick --validate "${key}: ${summary.replace(/"/g, "'")}"\`, pointing the planner at \`.sdlc/tickets/${key}.md\``,
+      "`/sdlc:sync`: moves the Jira issue and publishes the verification"
     ];
   }
   detect(root2) {
@@ -27313,10 +27435,15 @@ var PivEngine = class {
   }
   nextSteps(key, summary, isBug) {
     const slug = `${key.toLowerCase()}-${slugify(summary)}`;
-    return [
-      ...isBug ? [`\`/rca ${key}\`: root cause -> \`docs/rca/${key}.md\`, then \`sdlc-atl publish-rca ${key}\``, `\`/implement-fix ${key}\`: fix + regression test (+ a rule, so the class of bug can't recur)`] : [`\`/prime ${key}\`, then \`/plan-feature\`: save the plan as \`.claude/plans/${slug}.md\``, "`/execute` the plan, then `/validate`"],
-      `\`/execution-report\`: save as \`.claude/execution-reports/${slug}.md\` (its \u2713/\u2717 results are the verdict)`,
-      "`sdlc-atl sync`: moves the Jira issue and publishes the report"
+    return isBug ? [
+      `\`/sdlc:rca ${key}\`: root cause -> \`docs/rca/${key}.md\`, published to Confluence`,
+      `\`/sdlc:fix ${key}\`: regression test first, then the fix and the prevention rule; the report goes to \`.claude/execution-reports/${key.toLowerCase()}-fix-${slugify(summary)}.md\``,
+      "`/sdlc:sync`: moves the Jira issue and publishes the report"
+    ] : [
+      `\`/sdlc:prime ${key}\`, then \`/sdlc:plan ${key}\`: the plan is saved as \`.claude/plans/${slug}.md\``,
+      "`/sdlc:execute` the plan, then `/sdlc:validate`",
+      `\`/sdlc:report\`: saved as \`.claude/execution-reports/${slug}.md\` (its \u2713/\u2717 results are the verdict)`,
+      "`/sdlc:sync`: moves the Jira issue and publishes the report"
     ];
   }
 };
@@ -27415,7 +27542,7 @@ function escapeRe(s) {
 // packages/atlassian/src/engines/index.ts
 function readSdlcConfig(root2) {
   const file = join5(root2, ".sdlc", "config.json");
-  return existsSync5(file) ? JSON.parse(readFileSync4(file, "utf8")) : {};
+  return existsSync5(file) ? JSON.parse(readFileSync5(file, "utf8")) : {};
 }
 var factories = {
   gsd: () => new GsdEngine(),
@@ -27576,21 +27703,63 @@ async function publishBreakdown(opts, epic, report) {
 }
 
 // packages/atlassian/src/state.ts
-import { existsSync as existsSync6, mkdirSync as mkdirSync2, readFileSync as readFileSync5, writeFileSync as writeFileSync2 } from "node:fs";
-import { dirname as dirname3, join as join6 } from "node:path";
+import { existsSync as existsSync6, mkdirSync as mkdirSync3, readFileSync as readFileSync6, renameSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { dirname as dirname4, join as join6 } from "node:path";
+var MAPS = ["items", "tickets", "prs"];
 var StateFile = class {
   path;
   data;
+  base;
   constructor(root2) {
     this.path = join6(root2, ".sdlc", "atlassian.json");
-    this.data = existsSync6(this.path) ? JSON.parse(readFileSync5(this.path, "utf8")) : { items: {} };
-    this.data.items ??= {};
+    this.data = this.read();
+    this.base = structuredClone(this.data);
+  }
+  read() {
+    const data = existsSync6(this.path) ? JSON.parse(readFileSync6(this.path, "utf8")) : { items: {} };
+    data.items ??= {};
+    return data;
   }
   save() {
-    mkdirSync2(dirname3(this.path), { recursive: true });
-    writeFileSync2(this.path, JSON.stringify(this.data, null, 2) + "\n");
+    mkdirSync3(dirname4(this.path), { recursive: true });
+    const release = lockSync(`${this.path}.lock`);
+    try {
+      const merged = mergeState(this.base, this.data, this.read());
+      const tmp = `${this.path}.${process.pid}.tmp`;
+      writeFileSync2(tmp, JSON.stringify(merged, null, 2) + "\n");
+      renameSync(tmp, this.path);
+      this.data = merged;
+      this.base = structuredClone(merged);
+    } finally {
+      release();
+    }
   }
 };
+function mergeState(base, mine, disk) {
+  const same = (a, b2) => JSON.stringify(a) === JSON.stringify(b2);
+  const out2 = structuredClone(disk);
+  const b = base;
+  const m = mine;
+  for (const k2 of /* @__PURE__ */ new Set([...Object.keys(b), ...Object.keys(m)])) {
+    if (MAPS.includes(k2)) continue;
+    if (!same(b[k2], m[k2])) {
+      if (m[k2] === void 0) delete out2[k2];
+      else out2[k2] = structuredClone(m[k2]);
+    }
+  }
+  for (const map of MAPS) {
+    const bm = base[map] ?? {};
+    const mm = mine[map] ?? {};
+    const om = { ...out2[map] ?? {} };
+    for (const k2 of /* @__PURE__ */ new Set([...Object.keys(bm), ...Object.keys(mm)])) {
+      if (same(bm[k2], mm[k2])) continue;
+      if (mm[k2] === void 0) delete om[k2];
+      else om[k2] = structuredClone(mm[k2]);
+    }
+    if (map === "items" || Object.keys(om).length || out2[map]) out2[map] = om;
+  }
+  return out2;
+}
 
 // packages/atlassian/src/sync.ts
 var DEFAULT_TRANSITIONS = {
@@ -27604,7 +27773,8 @@ async function syncProgress(opts) {
   const transitions = { ...DEFAULT_TRANSITIONS, ...opts.transitions };
   const tickets = Object.entries(state.data.tickets ?? {}).filter(([, t]) => !t.escalatedTo);
   if (!state.data.epic && !tickets.length) throw new Error("Nothing to sync: file a breakdown (file-breakdown) or import a ticket (import) first.");
-  const report = { items: [], tickets: [], unfiled: [] };
+  const report = { items: [], tickets: [], unfiled: [], errors: 0 };
+  const hold = new Set((opts.hold ?? []).map((h2) => h2.toLowerCase()));
   if (breakdown && state.data.epic) {
     const children = await jira.epicIssues(state.data.epic);
     const breakdownPage = state.data.breakdownPageId && confluence ? await confluence.getPage(state.data.breakdownPageId) : void 0;
@@ -27614,7 +27784,7 @@ async function syncProgress(opts) {
         report.unfiled.push(item.id);
         continue;
       }
-      const entry = await syncOne(key, item.id, item.title, item.status, item.verification, breakdownPage);
+      const entry = await guarded(key, item.id, item.title, item.status, () => syncOne(key, item.id, item.title, item.status, item.verification, breakdownPage));
       if (entry.pageId) state.data.items[item.id] = { ...state.data.items[item.id], verificationPageId: entry.pageId };
       report.items.push(strip(entry));
     }
@@ -27622,14 +27792,24 @@ async function syncProgress(opts) {
   if (tickets.length) {
     if (!opts.engineFor || !opts.root) throw new Error("Ticket sync needs engineFor and root.");
     for (const [key, t] of tickets) {
-      const progress = await opts.engineFor(t.engine).ticketProgress(opts.root, key);
-      const entry = await syncOne(key, key, t.summary ?? key, progress.status, progress.verification, void 0);
+      const entry = await guarded(key, key, t.summary ?? key, "not_started", async () => {
+        const progress = await opts.engineFor(t.engine).ticketProgress(opts.root, key);
+        return syncOne(key, key, t.summary ?? key, progress.status, progress.verification, void 0);
+      });
       if (entry.pageId) state.data.tickets[key] = { ...t, verificationPageId: entry.pageId };
       report.tickets.push(strip(entry));
     }
   }
   if (!dryRun) state.save();
   return report;
+  async function guarded(key, id, title, status, f) {
+    try {
+      return await f();
+    } catch (e) {
+      report.errors++;
+      return { id, title, status, key, transition: { action: "error" }, error: e.message };
+    }
+  }
   function issueKeyFor(item, children) {
     const mapped = state.data.items[item.id]?.issueKey;
     if (mapped && children.some((c) => c.key === mapped)) return mapped;
@@ -27652,7 +27832,7 @@ async function syncProgress(opts) {
       status,
       key,
       jiraStatus: issue?.fields.status?.name,
-      transition: await moveForward(key, issue?.fields.status, await targetFor(key, status))
+      transition: await moveForward(key, issue?.fields.status, await targetFor(key, status), status)
     };
     if (v) {
       const r = await publishVerification(key, title, v, parent);
@@ -27661,12 +27841,19 @@ async function syncProgress(opts) {
     }
     return entry;
   }
-  async function moveForward(key, current, target) {
+  async function moveForward(key, current, target, status) {
     if (!target) return { action: "none" };
     if (current?.name.toLowerCase() === target.toLowerCase()) return { to: target, action: "already" };
     if (current?.statusCategory?.key === "done") return { to: target, action: "kept-done" };
+    const toDone = status === "complete" && target.toLowerCase() === transitions.complete?.toLowerCase();
+    if (!toDone) {
+      if (status !== "complete" && current?.statusCategory?.key === "indeterminate") return { to: target, action: "kept-started" };
+      if (current && hold.has(current.name.toLowerCase())) return { to: target, action: "kept-hold" };
+    }
     if (dryRun) return { to: target, action: "would-move" };
-    return { to: target, action: await jira.transitionTo(key, target) ? "moved" : "no-transition" };
+    const category = toDone ? "done" : status !== "complete" ? "indeterminate" : void 0;
+    const r = await jira.moveTo(key, target, { category });
+    return { to: r.status || target, action: r.action === "no-transition" ? "no-transition" : r.action === "already" ? "already" : "moved" };
   }
   async function publishVerification(key, title, v, parent) {
     if (!confluence) return { action: "skipped-no-space" };
@@ -27700,8 +27887,9 @@ function strip(e) {
 }
 
 // packages/atlassian/src/tickets.ts
-import { existsSync as existsSync7, mkdirSync as mkdirSync3, readFileSync as readFileSync6, writeFileSync as writeFileSync3 } from "node:fs";
-import { dirname as dirname4, join as join7 } from "node:path";
+import { existsSync as existsSync7, mkdirSync as mkdirSync4, readFileSync as readFileSync7, writeFileSync as writeFileSync3 } from "node:fs";
+import { dirname as dirname5, join as join7 } from "node:path";
+var SKILL_NAMES = "_Skills below are `/sdlc:<name>` in Claude Code and `sdlc-<name>` in Copilot, Codex and other agents._";
 var BUG_TYPES = /^(bug|defect|incident|problem)$/i;
 async function importTicket(opts) {
   const { jira, root: root2, key, engine, state } = opts;
@@ -27740,13 +27928,15 @@ async function importTicket(opts) {
     ...comments.length ? ["## Recent comments", "", ...comments.flatMap((c) => [`**${c.author.displayName ?? c.author.name}** (${c.created.slice(0, 10)}):`, "", JiraClient.wikiToMarkdown(c.body), ""])] : [],
     "## Next steps",
     "",
+    SKILL_NAMES,
+    "",
     ...engine.nextSteps(issue.key, f.summary, isBug).map((s, i) => `${i + 1}. ${s}`),
     "",
     `_Imported by sdlc-atl. If this turns out bigger than one ticket, escalate: \`sdlc-atl escalate ${issue.key} --epic <EPIC>\` and write a PRD (Track A)._`,
     ""
   ].join("\n");
   const brief = join7(root2, ".sdlc", "tickets", `${issue.key}.md`);
-  mkdirSync3(dirname4(brief), { recursive: true });
+  mkdirSync4(dirname5(brief), { recursive: true });
   writeFileSync3(brief, md);
   state.data.tickets ??= {};
   state.data.tickets[issue.key] = { ...state.data.tickets[issue.key], type, summary: f.summary, engine: engine.name };
@@ -27762,8 +27952,8 @@ var RCA_PARENT = "Root Cause Analyses";
 async function publishRca(opts) {
   const { jira, confluence, root: root2, key, spaceKey, state } = opts;
   const file = opts.file ?? join7(root2, "docs", "rca", `${key}.md`);
-  if (!existsSync7(file)) throw new Error(`No RCA doc at ${file} (run /rca ${key} first).`);
-  const md = readFileSync6(file, "utf8").replace(/^﻿/, "").replace(/\r\n/g, "\n");
+  if (!existsSync7(file)) throw new Error(`No RCA doc at ${file} (run /sdlc:rca ${key} first).`);
+  const md = readFileSync7(file, "utf8").replace(/^﻿/, "").replace(/\r\n/g, "\n");
   const issue = await jira.getIssue(key, "summary");
   if (!issue) throw new Error(`Issue ${key} not found`);
   const warnings = [];
@@ -27837,14 +28027,18 @@ function defaultBase(cwd, explicit) {
   for (const b of ["main", "master"]) if (tryGit(cwd, "rev-parse", "--verify", "--quiet", b) || tryGit(cwd, "rev-parse", "--verify", "--quiet", `origin/${b}`)) return b;
   return "main";
 }
-function keyFrom(text) {
-  return text.match(/(?:^|[^A-Za-z0-9])([A-Za-z][A-Za-z0-9]+-\d+)(?=$|[^0-9])/)?.[1]?.toUpperCase();
+function keysIn(text) {
+  const found = [...text.matchAll(/(?:^|[^A-Za-z0-9])([A-Za-z][A-Za-z0-9]+-\d+)(?=$|[^0-9])/g)].map((m) => m[1].toUpperCase());
+  return [...new Set(found)];
 }
-function reviewScope(cwd, base) {
+function keyFrom(text) {
+  return keysIn(text)[0];
+}
+function reviewScope(cwd, base, branchName) {
   const b = defaultBase(cwd, base);
   const baseRef = tryGit(cwd, "rev-parse", "--verify", "--quiet", `origin/${b}`) ? `origin/${b}` : b;
   const mergeBase = git(cwd, "merge-base", baseRef, "HEAD");
-  const branch = currentBranch(cwd);
+  const branch = branchName ?? currentBranch(cwd);
   const files = git(cwd, "diff", "--name-status", `${mergeBase}...HEAD`).split("\n").filter(Boolean).map((l3) => {
     const [status, ...rest2] = l3.split("	");
     return { status, path: rest2.at(-1) };
@@ -28120,15 +28314,16 @@ function ghCliToken(host) {
 
 // packages/atlassian/src/review.ts
 var import_yaml = __toESM(require_dist(), 1);
-import { readFileSync as readFileSync7 } from "node:fs";
+import { readFileSync as readFileSync8 } from "node:fs";
 var REVIEW_MARKER = "<!-- sdlc-review -->";
 var SEVERITIES = ["critical", "high", "medium", "low"];
 var isBlocking = (f) => f.severity === "critical" || f.severity === "high";
 function readReview(path) {
-  const text = readFileSync7(path, "utf8").replace(/^﻿/, "").replace(/\r\n/g, "\n");
+  const text = readFileSync8(path, "utf8").replace(/^﻿/, "").replace(/\r\n/g, "\n");
   const m = text.match(/^---\n([\s\S]*?)\n---\n?/);
   if (!m) throw new Error(`${path}: missing YAML front matter with findings`);
-  const meta = (0, import_yaml.parse)(m[1]) ?? {};
+  const front = m[1].replace(/^(head|base):[ \t]*([^'"\s#][^\s#]*)[ \t]*$/gm, '$1: "$2"');
+  const meta = (0, import_yaml.parse)(front) ?? {};
   const findings = (meta.findings ?? []).map((f, i) => {
     const severity = String(f.severity ?? "").toLowerCase();
     if (!SEVERITIES.includes(severity)) throw new Error(`${path}: finding ${i + 1} has severity "${f.severity}" (expected ${SEVERITIES.join("|")})`);
@@ -28182,21 +28377,39 @@ function stripHeading(md) {
 
 // packages/atlassian/src/pr.ts
 var PR_MARKER = "<!-- sdlc-pr -->";
+async function resolveKey(opts) {
+  if (opts.explicit) return opts.explicit.toUpperCase();
+  const candidates = [...new Set(opts.texts.flatMap(keysIn))];
+  const projects = opts.projects?.map((p) => p.toUpperCase());
+  if (projects?.length) return candidates.find((k2) => projects.includes(k2.replace(/-\d+$/, "")));
+  if (!opts.jira) return candidates[0];
+  for (const k2 of candidates) if (await opts.jira.getIssue(k2, "summary").catch(() => void 0)) return k2;
+  return void 0;
+}
 async function openPr(opts) {
   const { root: root2, host, jira, state, dryRun = false } = opts;
-  const scope = reviewScope(root2, opts.base);
+  const scope = reviewScope(root2, opts.base, opts.branch);
   if (scope.branch === scope.base || scope.branch === "HEAD") throw new Error(`On ${scope.branch}: create a feature branch (with the Jira key in its name) first.`);
   if (!scope.commits.length) throw new Error(`No commits on ${scope.branch} since ${scope.baseRef}.`);
   const push = pushState(root2);
   if (!dryRun && push.ahead !== 0) {
     throw new Error(push.upstream ? `${push.ahead} commit(s) not pushed: git push` : `Branch not pushed: git push -u origin ${scope.branch}`);
   }
-  const key = opts.key ?? scope.key ?? keyFrom(scope.commits.join(" "));
+  const key = await resolveKey({ explicit: opts.key, texts: [scope.branch, ...scope.commits], projects: opts.projects, jira });
   const issue = key && jira ? await jira.getIssue(key, "summary") : void 0;
+  const record = (pr2) => {
+    if (dryRun) return;
+    const prev = state.data.prs?.[scope.branch];
+    if (prev?.id === pr2.id && prev.key === key) return;
+    state.data.prs ??= {};
+    state.data.prs[scope.branch] = { id: pr2.id, url: pr2.url, host: host.kind, repo: host.repoId, key };
+    state.save();
+  };
   const title = opts.title ?? (key ? `${key}: ${issue?.fields.summary ?? scope.commits.at(-1).replace(/^\S+\s+/, "")}` : scope.commits.at(-1).replace(/^\S+\s+/, ""));
   const body = await prBody({ key, issueUrl: key && jira ? jira.browseUrl(key) : void 0, summary: issue?.fields.summary, commits: scope.commits, verificationUrl: await verificationUrl(opts, key) });
   const existing = await host.findOpenPr(scope.branch, scope.base);
   if (existing) {
+    record(existing);
     const same = existing.title === title && (await host.prBody(existing)).trim() === body.trim();
     if (same) return { pr: existing, action: "unchanged", key, title, body };
     if (dryRun) return { pr: existing, action: "would-update", key, title, body };
@@ -28205,15 +28418,21 @@ async function openPr(opts) {
   }
   if (dryRun) return { action: "would-create", key, title, body };
   const pr = await host.createPr({ source: scope.branch, target: scope.base, title, body, draft: opts.draft });
+  record(pr);
+  const warnings = [];
   if (key && jira) {
-    await jira.addRemoteLink(key, pr.url, `PR #${pr.id}: ${title}`);
-    await jira.addComment(key, `Pull request opened: [${host.repoId} #${pr.id}](${pr.url})${opts.draft ? " (draft)" : ""}`);
-    if (opts.reviewStatus) await jira.transitionTo(key, opts.reviewStatus);
+    const step = async (what, f) => {
+      try {
+        await f();
+      } catch (e) {
+        warnings.push(`${what}: ${e.message}`);
+      }
+    };
+    await step("Jira link", () => jira.addRemoteLink(key, pr.url, `PR #${pr.id}: ${title}`));
+    await step("Jira comment", () => jira.addComment(key, `Pull request opened: [${host.repoId} #${pr.id}](${pr.url})${opts.draft ? " (draft)" : ""}`));
+    if (opts.reviewStatus) await step(`Jira status "${opts.reviewStatus}"`, () => jira.transitionTo(key, opts.reviewStatus));
   }
-  state.data.prs ??= {};
-  state.data.prs[scope.branch] = { id: pr.id, url: pr.url, host: host.kind, repo: host.repoId, key };
-  state.save();
-  return { pr, action: "created", key, title, body };
+  return { pr, action: "created", key, title, body, ...warnings.length ? { warnings } : {} };
 }
 async function prBody(p) {
   return [
@@ -28239,9 +28458,9 @@ async function verificationUrl(opts, key) {
 async function publishReview(opts) {
   const { root: root2, host, jira } = opts;
   const review = readReview(opts.file);
-  const scope = reviewScope(root2, opts.base ?? review.base);
-  const pr = await host.findOpenPr(scope.branch, scope.base);
-  if (!pr) throw new Error(`No open PR for ${scope.branch} -> ${scope.base}; open one first (sdlc-atl pr).`);
+  const scope = reviewScope(root2, opts.base ?? review.base, opts.branch);
+  const pr = opts.prId ? await host.getPr(opts.prId) : await host.findOpenPr(scope.branch, scope.base);
+  if (!pr) throw new Error(opts.prId ? `PR ${opts.prId} not found.` : `No open PR for ${scope.branch} -> ${scope.base}; open one first (sdlc-atl pr).`);
   const head = headSha(root2);
   if (review.head && !head.startsWith(review.head) && !review.head.startsWith(head.slice(0, review.head.length))) {
     throw new Error(`Review is for commit ${review.head} but the branch is at ${head.slice(0, 10)}: review again (or update "head" if nothing relevant changed).`);
@@ -28255,7 +28474,7 @@ async function publishReview(opts) {
     details: `${review.verdict}: ${review.findings.length} finding(s), ${blocking} blocking`,
     findings: review.findings
   });
-  const key = scope.key;
+  const key = await resolveKey({ texts: [scope.branch, pr.title, ...scope.commits], projects: opts.projects, jira });
   let jiraCommented = false;
   if (jira && key && comment !== "unchanged") {
     await jira.addComment(key, renderJiraComment(review, pr.url));
@@ -28301,13 +28520,15 @@ var { values: opt, positionals } = parseArgs({
     draft: { type: "boolean", default: false },
     gate: { type: "boolean", default: false },
     key: { type: "string" },
+    branch: { type: "string" },
+    pr: { type: "string" },
     "issue-type": { type: "string" },
     "dry-run": { type: "boolean", default: false },
     json: { type: "boolean", default: false },
     env: { type: "string" }
   }
 });
-var root = resolve2(opt.root);
+var root = resolve3(opt.root);
 var cfg = readSdlcConfig(root);
 var out = (data, text) => console.log(opt.json ? JSON.stringify(data, null, 2) : text());
 var clients = () => connect({ envFile: opt.env });
@@ -28375,6 +28596,7 @@ try {
           root,
           state,
           transitions: cfg.jira?.transitions,
+          hold: cfg.jira?.hold,
           confluenceSpace: opt.space ?? cfg.confluence?.space,
           dryRun: opt["dry-run"],
           doneWhen: cfg.jira?.doneWhen,
@@ -28389,6 +28611,8 @@ try {
         const changes = [...result.items, ...result.tickets].filter((i) => i.transition.action === "moved" || ["created", "updated"].includes(i.report?.action ?? ""));
         for (const i of changes) console.log(`${(/* @__PURE__ */ new Date()).toISOString()} ${i.key} ${i.status}: ${i.transition.action === "moved" ? `-> ${i.transition.to}` : ""} ${i.report ? `report ${i.report.action}` : ""}`.trim());
       } else out(result, () => formatSync(result, opt["dry-run"]));
+      for (const i of [...result.items, ...result.tickets].filter((x2) => x2.error)) console.error(`${(/* @__PURE__ */ new Date()).toISOString()} ${i.key}: sync failed: ${i.error}`);
+      if (result.errors) process.exitCode = 1;
       break;
     }
     case "review-scope": {
@@ -28416,8 +28640,11 @@ try {
         key: opt.key?.toUpperCase(),
         draft: opt.draft,
         dryRun: opt["dry-run"],
-        reviewStatus: cfg.jira?.transitions?.review
+        reviewStatus: cfg.jira?.transitions?.review,
+        branch: opt.branch,
+        projects: cfg.jira?.projects
       });
+      for (const w of r.warnings ?? []) console.error(`warning: ${w}`);
       out(r, () => `${r.action}: ${r.pr?.url ?? "(new PR)"}
   title: ${r.title}${r.key ? `
   jira: ${r.key}` : ""}${opt["dry-run"] ? `
@@ -28434,7 +28661,7 @@ ${r.body}` : ""}`);
       } catch {
         jira = void 0;
       }
-      const r = await publishReview({ root, host: resolveHost(root, { envFile: opt.env }), jira, file: resolve2(file), base: opt.base ?? cfg.git?.base });
+      const r = await publishReview({ root, host: resolveHost(root, { envFile: opt.env }), jira, file: resolve3(file), base: opt.base ?? cfg.git?.base, branch: opt.branch, prId: opt.pr, projects: cfg.jira?.projects });
       out(
         r,
         () => [
@@ -28464,15 +28691,15 @@ ${r.body}` : ""}`);
 ${ConfluenceClient.markdown(page)}
 `;
         if (opt.out) {
-          mkdirSync4(dirname5(resolve2(opt.out)), { recursive: true });
-          writeFileSync4(resolve2(opt.out), md);
+          mkdirSync5(dirname6(resolve3(opt.out)), { recursive: true });
+          writeFileSync4(resolve3(opt.out), md);
           console.log(`${page.title} -> ${opt.out}`);
         } else process.stdout.write(md);
       } else if (sub === "push") {
         if (!arg) throw new Error("page push FILE --space KEY [--title T] [--parent PAGE_ID]");
         const spaceKey = opt.space ?? cfg.confluence?.space;
         if (!spaceKey) throw new Error("page push needs --space KEY (or confluence.space in .sdlc/config.json)");
-        let md = readFileSync8(resolve2(arg), "utf8").replace(/^﻿/, "").replace(/^<!-- source: [^\n]*-->\n+/, "");
+        let md = readFileSync9(resolve3(arg), "utf8").replace(/^﻿/, "").replace(/^<!-- source: [^\n]*-->\n+/, "");
         const h1 = md.match(/^#\s+(.+)\n+/);
         const title = opt.title ?? h1?.[1]?.trim() ?? basename2(arg, ".md");
         if (h1 && !opt.title) md = md.slice(h1[0].length);
@@ -28502,7 +28729,7 @@ ${ConfluenceClient.markdown(page)}
         ...opt.space ? { confluence: { ...cfg.confluence, space: opt.space } } : {}
       };
       if (merged.engine) resolveEngine(root, merged.engine);
-      mkdirSync4(dirname5(file), { recursive: true });
+      mkdirSync5(dirname6(file), { recursive: true });
       writeFileSync4(file, JSON.stringify(merged, null, 2) + "\n");
       console.log(`${file}:
 ${JSON.stringify(merged, null, 2)}`);

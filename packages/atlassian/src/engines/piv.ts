@@ -7,8 +7,8 @@ import type { Breakdown, Engine, LoadOptions, TicketProgress, Verification, Work
  * Reference-style engine ("PIV": prime → plan-feature → execute → validate), reading the artifacts the
  * reference's skills write:
  *   docs/specs/<epic>.md                 `/spec` ticket breakdown: "### TICKET-1 — <title>" sections
- *   .claude/plans/<name>.md              `/plan-feature` output: the ticket is planned
- *   .claude/execution-reports/<name>.md  `/execution-report` output: its ✓/✗ "Validation Results" are the verdict
+ *   .claude/plans/<name>.md              `/sdlc:plan` output (the reference's `/plan-feature`): the ticket is planned
+ *   .claude/execution-reports/<name>.md  `/sdlc:report` output: its ✓/✗ "Validation Results" are the verdict
  *
  * The reference never links a plan or report back to its ticket, so (deviation) an artifact belongs to a ticket
  * when its file name starts with the ticket id or Jira key ("ticket-1-…", "sdlc-5-…"), or it has a
@@ -61,13 +61,18 @@ export class PivEngine implements Engine {
 
   nextSteps(key: string, summary: string, isBug: boolean): string[] {
     const slug = `${key.toLowerCase()}-${slugify(summary)}`;
-    return [
-      ...(isBug
-        ? [`\`/rca ${key}\`: root cause -> \`docs/rca/${key}.md\`, then \`sdlc-atl publish-rca ${key}\``, `\`/implement-fix ${key}\`: fix + regression test (+ a rule, so the class of bug can't recur)`]
-        : [`\`/prime ${key}\`, then \`/plan-feature\`: save the plan as \`.claude/plans/${slug}.md\``, '`/execute` the plan, then `/validate`']),
-      `\`/execution-report\`: save as \`.claude/execution-reports/${slug}.md\` (its ✓/✗ results are the verdict)`,
-      '`sdlc-atl sync`: moves the Jira issue and publishes the report',
-    ];
+    return isBug
+      ? [
+          `\`/sdlc:rca ${key}\`: root cause -> \`docs/rca/${key}.md\`, published to Confluence`,
+          `\`/sdlc:fix ${key}\`: regression test first, then the fix and the prevention rule; the report goes to \`.claude/execution-reports/${key.toLowerCase()}-fix-${slugify(summary)}.md\``,
+          '`/sdlc:sync`: moves the Jira issue and publishes the report',
+        ]
+      : [
+          `\`/sdlc:prime ${key}\`, then \`/sdlc:plan ${key}\`: the plan is saved as \`.claude/plans/${slug}.md\``,
+          '`/sdlc:execute` the plan, then `/sdlc:validate`',
+          `\`/sdlc:report\`: saved as \`.claude/execution-reports/${slug}.md\` (its ✓/✗ results are the verdict)`,
+          '`/sdlc:sync`: moves the Jira issue and publishes the report',
+        ];
   }
 }
 

@@ -166,6 +166,26 @@ real repo, then build the differentiators. Source: the crew review (docs/researc
 - **Files touched (estimate):** `scripts/install.*`, `automation.ts`
 - **Depends on:** none
 
+### T-10 — Getting-started wizard
+- **Scope:** One command sets up a developer machine for the AI tools they use (Copilot first, then Codex and Claude Code)
+- **Acceptance criteria:**
+  - `node setup.mjs` asks which tools are in use: GitHub Copilot CLI, Copilot in VS Code, Codex, Claude Code (and others via a skills directory)
+  - Checks Node 24, git, `uv` and `gh`; installs them with winget/brew when allowed, otherwise prints the exact command
+  - Installs the skills and registers the Jira/Confluence MCP server for each selected tool
+  - Asks for Jira, Confluence and Bitbucket URLs and tokens, tests each live, and writes `~/.sdlc/atlassian.env` readable only by the user
+  - Detects proxy / TLS-inspection problems and explains `NODE_EXTRA_CA_CERTS`
+  - Re-running is safe; `--check` only reports; finishes with a doctor-style summary
+- **Files touched (estimate):** `setup.mjs`, `scripts/install.*`, `packages/atlassian/src/cli.ts`
+- **Depends on:** S-4
+
+### T-11 — AGENTS.md as the single rules file
+- **Scope:** Copilot, Codex and Claude Code read the same project rules
+- **Acceptance criteria:**
+  - Skills that add or read rules use `AGENTS.md` (rca, fix, report, review, review-fix, prime)
+  - `sdlc-atl init` / setup creates `AGENTS.md` if missing and a `CLAUDE.md` that imports it (`@AGENTS.md`), without overwriting existing content
+- **Files touched (estimate):** `plugins/sdlc/skills/*`, `packages/atlassian/src/cli.ts`
+- **Depends on:** none
+
 ### F-2 — /sdlc:system-review + system-reviewer agent
 - **Scope:** Restore the reference's plan-vs-actual learning loop
 - **Acceptance criteria:**

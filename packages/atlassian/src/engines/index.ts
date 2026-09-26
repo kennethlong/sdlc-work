@@ -15,7 +15,9 @@ export type SdlcConfig = {
   /** piv engine: which docs/specs/*.md to use when there are several. */
   spec?: string;
   /** transitions: work status -> Jira status; `review` (optional) is applied when a PR is opened. */
-  jira?: { issueType?: string; transitions?: Partial<Record<WorkStatus | 'review', string>>; doneWhen?: 'verified' | 'merged' };
+  /** projects: Jira project keys this repo uses; tells real keys in branch names from look-alikes like UTF-8. */
+  /** hold: statuses sync never moves an issue out of, except to Done (e.g. QA). */
+  jira?: { issueType?: string; projects?: string[]; hold?: string[]; transitions?: Partial<Record<WorkStatus | 'review', string>>; doneWhen?: 'verified' | 'merged' };
   confluence?: { space?: string };
   git?: { base?: string };
 };

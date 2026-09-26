@@ -26,7 +26,7 @@ function block(t: Token, listDepth: number): string {
     case 'paragraph':
       return inline((t as Tokens.Paragraph).tokens);
     case 'text':
-      return (t as Tokens.Text).tokens ? inline((t as Tokens.Text).tokens!) : (t as Tokens.Text).text;
+      return (t as Tokens.Text).tokens ? inline((t as Tokens.Text).tokens!) : escapeWiki(decode((t as Tokens.Text).text));
     case 'code': {
       const c = t as Tokens.Code;
       return `{code${c.lang ? `:${c.lang}` : ''}}\n${c.text}\n{code}`;
@@ -89,14 +89,29 @@ function inline(tokens: Token[] = []): string {
         case 'br':
           return '\n';
         case 'text':
-          return (t as Tokens.Text).tokens ? inline((t as Tokens.Text).tokens!) : decode((t as Tokens.Text).text);
+          return (t as Tokens.Text).tokens ? inline((t as Tokens.Text).tokens!) : escapeWiki(decode((t as Tokens.Text).text));
         case 'escape':
-          return (t as Tokens.Escape).text;
+          // Escaped in markdown means literal: keep it literal in Jira too.
+          return (t as Tokens.Escape).text.replace(/^[*_+^~{}[\]|!#-]$/, '\\$&');
         default:
           return 'raw' in t ? String(t.raw) : '';
       }
     })
     .join('');
+}
+
+/**
+ * Escape plain text so Jira doesn't read it as markup: braces (macros), brackets (links), pipes (tables), `!x`
+ * (images), a line-leading `#` (numbered list), and `* _ - + ^ ~` where they could open an effect (start of text or
+ * after a non-word character, followed by a non-space), e.g. `-v`, `*args`, `_private`. `snake_case`, `a - b`
+ * and `2 * 3` are left alone.
+ */
+export function escapeWiki(text: string): string {
+  return text
+    .replace(/[{}[\]|]/g, '\\$&')
+    .replace(/!(?=\S)/g, '\\!')
+    .replace(/(^|\n)#/g, '$1\\#')
+    .replace(/(^|[^\w\\])([*_+^~-])(?=\S)/g, '$1\\$2');
 }
 
 function decode(s: string): string {
@@ -130,11 +145,14 @@ export function jiraWikiToMarkdown(wiki: string): string {
     })
     .replace(/\{quote\}([\s\S]*?)\{quote\}/g, (_m, body: string) => body.trim().split('\n').map((l) => `> ${l}`).join('\n'))
     .replace(/\{\{((?:\\.|[^}\\])+)\}\}/g, (_m, code: string) => '`' + code.replace(/\\([{}[\]])/g, '$1') + '`')
-    .replace(/\[([^|\]]+)\|([^\]]+)\]/g, '[$1]($2)')
-    .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,:;!?]|$)/gm, '$1**$2**')
-    .replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,:;!?]|$)/gm, '$1*$2*')
-    .replace(/(^|[\s(])-([^-\n]+)-(?=[\s).,:;!?]|$)/gm, '$1~~$2~~')
-    .replace(/^----\s*$/gm, '---');
+    .replace(/(?<!\\)\[([^|\]]+)\|([^\]]+)\]/g, '[$1]($2)')
+    // Effects need a non-space just inside both markers, as in Jira (so "a - b - c" is not strikethrough).
+    .replace(/(^|[\s(])\*(\S(?:[^*\n]*\S)?)\*(?=[\s).,:;!?]|$)/gm, '$1**$2**')
+    .replace(/(^|[\s(])_(\S(?:[^_\n]*\S)?)_(?=[\s).,:;!?]|$)/gm, '$1*$2*')
+    .replace(/(^|[\s(])-(\S(?:[^-\n]*\S)?)-(?=[\s).,:;!?]|$)/gm, '$1~~$2~~')
+    .replace(/^----\s*$/gm, '---')
+    // Jira escapes: markdown shares `\*` and `\_`; the rest need no escaping in markdown.
+    .replace(/\\([{}[\]|!#+^~-])/g, '$1');
   return s.replace(/\u0000(\d+)\u0000/g, (_m, i: string) => codeBlocks[Number(i)]!).trim();
 }
 

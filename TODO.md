@@ -7,13 +7,13 @@ review, which has the evidence (file:line) and effort for each item. Work top to
 
 ## 1. Safety and correctness (do first)
 
-- [ ] **S1** [SCRUM-147](https://kennyalanlong.atlassian.net/browse/SCRUM-147) `npm test` runs unit tests only; live suites need `SDLC_LIVE=1` and refuse non-local URLs unless `SDLC_LIVE_ALLOW_REMOTE=1` (B1)
-- [ ] **S2** [SCRUM-148](https://kennyalanlong.atlassian.net/browse/SCRUM-148) Ticket briefs name real skills (`/sdlc:prime`, `/sdlc:plan`, `/sdlc:fix`, `/sdlc:report`, `/sdlc:rca`), with a test (B2)
-- [ ] **S3** [SCRUM-149](https://kennyalanlong.atlassian.net/browse/SCRUM-149) State file: take the lock in every command that writes it; atomic lock (`wx` flag + PID alive check); write to a temp file then rename, re-reading and merging first (B3, B4)
-- [ ] **S4** [SCRUM-150](https://kennyalanlong.atlassian.net/browse/SCRUM-150) HTTP: request timeout; retry POST only on 429; clear messages for expired tokens (401/403) (B4, B5)
-- [ ] **S5** [SCRUM-151](https://kennyalanlong.atlassian.net/browse/SCRUM-151) Markup: escape Jira special characters; fix the strikethrough regex; negative tests (B6)
-- [ ] **S6** [SCRUM-152](https://kennyalanlong.atlassian.net/browse/SCRUM-152) Review `head`/`base` read as strings (B7); validate Jira keys against the project keys, add `--branch`/`--pr`, record existing PRs (B8); hook path with `resolve()` (B9)
-- [ ] **S7** [SCRUM-153](https://kennyalanlong.atlassian.net/browse/SCRUM-153) Sync: catch errors per item and continue; configurable statuses never moved backwards (B11); reach Done by status category; multi-hop transitions; set Resolution on Done
+- [x] **S1** [SCRUM-147](https://kennyalanlong.atlassian.net/browse/SCRUM-147) `npm test` runs unit tests only; live suites need `SDLC_LIVE=1` and refuse non-local URLs unless `SDLC_LIVE_ALLOW_REMOTE=1` (B1)
+- [x] **S2** [SCRUM-148](https://kennyalanlong.atlassian.net/browse/SCRUM-148) Ticket briefs name real skills (`/sdlc:prime`, `/sdlc:plan`, `/sdlc:fix`, `/sdlc:report`, `/sdlc:rca`), with a test (B2)
+- [x] **S3** [SCRUM-149](https://kennyalanlong.atlassian.net/browse/SCRUM-149) State file: take the lock in every command that writes it; atomic lock (`wx` flag + PID alive check); write to a temp file then rename, re-reading and merging first (B3, B4)
+- [x] **S4** [SCRUM-150](https://kennyalanlong.atlassian.net/browse/SCRUM-150) HTTP: request timeout; retry POST only on 429; clear messages for expired tokens (401/403) (B4, B5)
+- [x] **S5** [SCRUM-151](https://kennyalanlong.atlassian.net/browse/SCRUM-151) Markup: escape Jira special characters; fix the strikethrough regex; negative tests (B6)
+- [x] **S6** [SCRUM-152](https://kennyalanlong.atlassian.net/browse/SCRUM-152) Review `head`/`base` read as strings (B7); validate Jira keys against the project keys, add `--branch`/`--pr`, record existing PRs (B8); hook path with `resolve()` (B9)
+- [x] **S7** [SCRUM-153](https://kennyalanlong.atlassian.net/browse/SCRUM-153) Sync: catch errors per item and continue; configurable statuses never moved backwards (B11); reach Done by status category; multi-hop transitions; set Resolution on Done
 - [ ] **F1** [SCRUM-155](https://kennyalanlong.atlassian.net/browse/SCRUM-155) Complete the deviations table (≈13 missing rows); fix stale names (`plan-feature`, the "sweep" attribution)
 - [ ] **B12** [SCRUM-154](https://kennyalanlong.atlassian.net/browse/SCRUM-154) Doc drift: README path `C:Codesdlc-work`, the stale CLI list, `import-story`/`implement-fix` names, "12 skills"
 
@@ -28,6 +28,8 @@ review, which has the evidence (file:line) and effort for each item. Work top to
 - [ ] **T7** [SCRUM-170](https://kennyalanlong.atlassian.net/browse/SCRUM-170) `sdlc-atl start KEY`: import → assign to me → In Progress → `feature/KEY-slug` branch → next steps; branch creation at the start of `ticket`/`fix`/the `spec` hand-off
 - [ ] **T8** [SCRUM-156](https://kennyalanlong.atlassian.net/browse/SCRUM-156) Config discoverability: `init` flags for every key, a JSON schema, setup documents `transitions`/`doneWhen`/`issueType`/`git.base`/`spec`
 - [ ] **T9** [SCRUM-157](https://kennyalanlong.atlassian.net/browse/SCRUM-157) Cross-agent install: Node-based `install.mjs` for all operating systems; rewrite `$1`/`$ARGUMENTS` for non-Claude agents; document `uv`; the hook always uses a stable CLI path
+- [ ] **T10** [SCRUM-191](https://kennyalanlong.atlassian.net/browse/SCRUM-191) Getting-started wizard: `node setup.mjs` picks the AI tools (Copilot CLI / VS Code, Codex, Claude Code), checks and installs prerequisites, installs skills + MCP per tool, collects and live-tests tokens, detects proxy/TLS issues
+- [ ] **T11** [SCRUM-190](https://kennyalanlong.atlassian.net/browse/SCRUM-190) AGENTS.md as the single rules file: skills write rules there; `init` creates `AGENTS.md` and a `CLAUDE.md` that imports it
 
 ## 3. Restore reference strengths
 

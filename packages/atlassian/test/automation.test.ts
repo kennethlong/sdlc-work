@@ -75,3 +75,20 @@ describe('withLock', () => {
     }
   });
 });
+
+describe('hook location', () => {
+  it('honours an absolute core.hooksPath', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'sdlc-hookpath-'));
+    const shared = mkdtempSync(join(tmpdir(), 'sdlc-shared-hooks-'));
+    try {
+      git(repo, 'init', '-q', '-b', 'main');
+      git(repo, 'config', 'core.hooksPath', shared);
+      installHook(repo, selfCommand(join(repo, 'cli.mjs')));
+      expect(existsSync(join(shared, 'post-commit'))).toBe(true);
+      expect(hookInstalled(repo)).toBe(true);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(shared, { recursive: true, force: true });
+    }
+  });
+});

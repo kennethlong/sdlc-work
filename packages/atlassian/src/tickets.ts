@@ -12,6 +12,9 @@ import { dirname, join } from 'node:path';
 import type { ConfluenceClient } from './confluence.ts';
 import { JiraClient } from './jira.ts';
 import type { StateFile } from './state.ts';
+
+/** Briefs are read by any agent; the plugin's `/sdlc:<name>` is `sdlc-<name>` where the skills are installed as files. */
+export const SKILL_NAMES = '_Skills below are `/sdlc:<name>` in Claude Code and `sdlc-<name>` in Copilot, Codex and other agents._';
 import type { Engine } from './work.ts';
 
 export type ImportResult = { key: string; type: string; summary: string; brief: string; isBug: boolean; epic?: string };
@@ -58,6 +61,8 @@ export async function importTicket(opts: { jira: JiraClient; root: string; key: 
       ? ['## Recent comments', '', ...comments.flatMap((c) => [`**${c.author.displayName ?? c.author.name}** (${c.created.slice(0, 10)}):`, '', JiraClient.wikiToMarkdown(c.body), ''])]
       : []),
     '## Next steps',
+    '',
+    SKILL_NAMES,
     '',
     ...engine.nextSteps(issue.key, f.summary, isBug).map((s, i) => `${i + 1}. ${s}`),
     '',
@@ -106,7 +111,7 @@ export async function publishRca(opts: {
 }): Promise<RcaReport> {
   const { jira, confluence, root, key, spaceKey, state } = opts;
   const file = opts.file ?? join(root, 'docs', 'rca', `${key}.md`);
-  if (!existsSync(file)) throw new Error(`No RCA doc at ${file} (run /rca ${key} first).`);
+  if (!existsSync(file)) throw new Error(`No RCA doc at ${file} (run /sdlc:rca ${key} first).`);
   const md = readFileSync(file, 'utf8').replace(/^﻿/, '').replace(/\r\n/g, '\n');
   const issue = await jira.getIssue(key, 'summary');
   if (!issue) throw new Error(`Issue ${key} not found`);
