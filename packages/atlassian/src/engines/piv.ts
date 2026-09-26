@@ -126,7 +126,9 @@ function belongsTo(a: Artifact, ids: string[]): boolean {
 
 /** An execution report's "Validation Results" ✓/✗ lines as a verification verdict. */
 export function executionVerdict(a: Artifact): Verification {
-  const section = a.text.match(/#+\s*Validation Results\s*\n([\s\S]*?)(?=\n#+\s|$)/i)?.[1] ?? '';
+  // The template says "Validation Results"; agents also write "## Validation" with a ✓/✗ table. Prefer the former.
+  const section =
+    a.text.match(/#+\s*Validation Results\s*\n([\s\S]*?)(?=\n#+\s|$)/i)?.[1] ?? a.text.match(/#+\s*Validation\b[^\n]*\n([\s\S]*?)(?=\n#+\s|$)/i)?.[1] ?? '';
   const checks = section.split('\n').filter((l) => /[✓✗✔✘]/.test(l));
   const failed = checks.filter((l) => /[✗✘]/.test(l)).length;
   return {

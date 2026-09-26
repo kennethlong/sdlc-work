@@ -1,0 +1,44 @@
+# Jenkins configuration as code for the local stack (dev only). Values come from the container environment,
+# which docker-compose fills from the stack's .env (see dc.ps1).
+jenkins:
+  systemMessage: "sdlc-work local Jenkins: headless 'work this ticket' runner (dev only)"
+  numExecutors: 2
+  mode: NORMAL
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "${JENKINS_ADMIN_USER:-admin}"
+          name: "Local Admin"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+security:
+  # The job below is generated from a file in the mounted repo; no Job DSL script approval for local dev.
+  globalJobDslSecurityConfiguration:
+    useScriptSecurity: false
+
+unclassified:
+  location:
+    url: "${SDLC_JENKINS_URL:-http://localhost:8081/}"
+
+jobs:
+  # Polls Jira every 5 minutes and works eligible stories: `sdlc-atl work --poll` in a fresh clone.
+  # The pipeline is the shared template, read when Jenkins (re)loads this configuration.
+  - script: >
+      pipelineJob('sdlc-work-poll') {
+        description('Headless "work this ticket": picks up Jira stories labelled for AI work and opens draft PRs (sdlc-atl work --poll). Pipeline: templates/ci/jenkins/Jenkinsfile.sdlc-work')
+        properties {
+          disableConcurrentBuilds()
+          pipelineTriggers { triggers { cron { spec('H/5 * * * *') } } }
+        }
+        logRotator { numToKeep(50) }
+        definition {
+          cps {
+            script(new File('/opt/sdlc-work/templates/ci/jenkins/Jenkinsfile.sdlc-work').text)
+            sandbox(true)
+          }
+        }
+      }

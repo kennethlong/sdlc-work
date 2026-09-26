@@ -154,6 +154,21 @@
     "T-10": {
       "issueKey": "SCRUM-191",
       "verificationPageId": "1998940"
+    },
+    "W-1": {
+      "issueKey": "SCRUM-294"
+    },
+    "W-4": {
+      "issueKey": "SCRUM-295"
+    },
+    "W-2": {
+      "issueKey": "SCRUM-296"
+    },
+    "W-3": {
+      "issueKey": "SCRUM-297"
+    },
+    "W-5": {
+      "issueKey": "SCRUM-298"
     }
   },
   "breakdownPageId": "491549",

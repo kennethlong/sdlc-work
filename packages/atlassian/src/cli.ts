@@ -28,6 +28,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { hookInstalled, installHook, selfCommand, uninstallHook, withLock } from './automation.ts';
 import { ensureRulesFiles } from './rules.ts';
+import { pollAndWork, workTicket, type AgentName, type WorkConfig, type WorkDeps } from './headless.ts';
 import { ConfluenceClient } from './confluence.ts';
 import { connect } from './index.ts';
 import { resolveEngine, readSdlcConfig } from './engines/index.ts';
@@ -60,6 +61,9 @@ Both
   hooks install|uninstall|status               git post-commit hook that runs sync automatically
   init [--engine gsd|piv] [--epic KEY] [--prd ID] [--space KEY]   .sdlc/config.json + AGENTS.md/CLAUDE.md
   whoami                                       check the Jira and Confluence connection
+Headless (CI)
+  work KEY [--agent copilot|claude|codex] [--force]   an AI agent works the story unattended -> draft PR
+  work --poll                                  work the next story labelled ai-ready (config: work.*)
 
 Common options: --root DIR, --engine gsd|piv, --dry-run, --json, --env FILE, --space KEY
 Credentials: ~/.sdlc/atlassian.env (set up with \`node setup.mjs\` in the sdlc-work clone).`;
@@ -89,6 +93,9 @@ const { values: opt, positionals } = parseArgs({
     gate: { type: 'boolean', default: false },
     key: { type: 'string' },
     branch: { type: 'string' },
+    poll: { type: 'boolean', default: false },
+    force: { type: 'boolean', default: false },
+    agent: { type: 'string' },
     pr: { type: 'string' },
     'issue-type': { type: 'string' },
     'dry-run': { type: 'boolean', default: false },
@@ -111,6 +118,33 @@ const issueKeysOf = (state: StateFile) => Object.fromEntries(Object.entries(stat
 
 try {
   switch (command) {
+    case 'work': {
+      // Headless: CI works a labelled story (or polls for them) with an AI agent, ending in a draft PR.
+      const c = clients();
+      let confluence;
+      try {
+        confluence = c.confluence;
+      } catch {
+        confluence = undefined;
+      }
+      const config = { ...cfg, work: { ...(cfg as { work?: WorkConfig }).work, ...(opt.agent ? { agent: opt.agent as AgentName } : {}) } };
+      const deps: WorkDeps = {
+        jira: c.jira,
+        confluence,
+        host: resolveHost(root, { envFile: opt.env }),
+        engine: resolveEngine(root, opt.engine, { fallback: true }),
+        state: new StateFile(root),
+        root,
+        config,
+        buildUrl: process.env.BUILD_URL,
+        log: (l) => console.error(`${new Date().toISOString()} ${l}`),
+      };
+      const results = opt.poll ? await pollAndWork(deps) : [await workTicket(keyArg(), deps, { force: opt.force })];
+      out(results, () => (results.length ? results.map((r) => `${r.key}: ${r.outcome}${r.prUrl ? ` ${r.prUrl}` : ''}${r.reason ? ` (${r.reason})` : ''}`).join('\n') : 'nothing to work on'));
+      if (results.some((r) => r.outcome === 'failed')) process.exitCode = 1;
+      break;
+    }
+
     case 'whoami': {
       const c = clients();
       const [j, cf] = await Promise.allSettled([c.jira.myself(), c.confluence.currentUser()]);

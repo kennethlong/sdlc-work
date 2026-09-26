@@ -20,6 +20,9 @@ for each tool (the plugin for Claude Code), and collects and tests your Jira, Co
 Then, in a repo, run the setup skill: `/sdlc:setup` in Claude Code, or ask Copilot or Codex to "use the
 sdlc-setup skill". Details: [docs/getting-started.md](docs/getting-started.md).
 
+**Hands-off:** label a Jira story `ai-ready` and a CI job has an AI agent work it into a draft pull request on
+Bitbucket Data Center, asking in Jira when the story is unclear. See [docs/headless.md](docs/headless.md).
+
 ## Docs
 
 - [TODO](TODO.md): the ranked work list from the crew review

@@ -1,0 +1,90 @@
+// sdlc headless "work this ticket" poller (Data Center): every few minutes, pick up Jira stories labelled for AI
+// work and let an AI agent work them in a fresh clone, ending in a draft PR. The logic is in `sdlc-atl work --poll`
+// (claim, branch, run the agent with the sdlc skills, gate on the verification, push, draft PR, report to Jira);
+// this pipeline only provides a clean workspace, a clone and the credentials.
+//
+// Agent host needs: git, Node >= 22, uv (for the Jira/Confluence MCP server), the AI CLI (default: GitHub Copilot
+// CLI, `npm i -g @github/copilot`), and the sdlc skills + CLI installed for the Jenkins user:
+// `node <sdlc-work>/setup.mjs --yes --agents copilot --skip-credentials --skip-prereqs`.
+//
+// Configuration, each as a build parameter or an environment variable of the same name on the agent:
+//   REPO_URL       clone URL of the repo to work in (HTTP; authenticated with GIT_TOKEN or BITBUCKET_TOKEN)
+//   AGENT          copilot | claude | codex
+//   SDLC_ATL       path to the bundled CLI (plugins/sdlc/bin/sdlc-atl.mjs)
+//   *_CREDENTIALS  Jenkins "secret text" credential ids; when empty the variable is taken from the agent's
+//                  environment instead (the local stack passes them in that way).
+// Use a bot account for everything: Jira/Confluence PATs, a Bitbucket HTTP access token with repo write, and a
+// GitHub token with Copilot access for the Copilot CLI (COPILOT_GITHUB_TOKEN). The bot can only open draft PRs;
+// keep branch protection and human review on the base branch.
+pipeline {
+  agent any
+  options {
+    disableConcurrentBuilds()
+    timestamps()
+    timeout(time: 120, unit: 'MINUTES')
+  }
+  triggers { cron('H/5 * * * *') }
+  parameters {
+    string(name: 'REPO_URL', defaultValue: '', description: 'Repo to work in (default: env SDLC_WORK_REPO_URL)')
+    choice(name: 'AGENT', choices: ['copilot', 'claude', 'codex'], description: 'AI coding agent that works the tickets')
+    string(name: 'SDLC_ATL', defaultValue: '', description: 'Path to sdlc-atl.mjs (default: env SDLC_ATL, else ~/.sdlc/bin/sdlc-atl.mjs)')
+    string(name: 'JIRA_PAT_CREDENTIALS', defaultValue: '', description: 'Credential id: Jira PAT (empty: env JIRA_PAT)')
+    string(name: 'CONFLUENCE_PAT_CREDENTIALS', defaultValue: '', description: 'Credential id: Confluence PAT (empty: env CONFLUENCE_PAT)')
+    string(name: 'BITBUCKET_TOKEN_CREDENTIALS', defaultValue: '', description: 'Credential id: Bitbucket HTTP access token (empty: env BITBUCKET_TOKEN)')
+    string(name: 'GIT_TOKEN_CREDENTIALS', defaultValue: '', description: 'Credential id: token for cloning/pushing when not Bitbucket (empty: env GIT_TOKEN, else BITBUCKET_TOKEN)')
+    string(name: 'COPILOT_TOKEN_CREDENTIALS', defaultValue: '', description: 'Credential id: GitHub token with Copilot access (empty: env COPILOT_GITHUB_TOKEN)')
+  }
+  stages {
+    stage('Work eligible stories') {
+      steps {
+        script {
+          def secrets = [
+            ['JIRA_PAT_CREDENTIALS', 'JIRA_PAT'],
+            ['CONFLUENCE_PAT_CREDENTIALS', 'CONFLUENCE_PAT'],
+            ['BITBUCKET_TOKEN_CREDENTIALS', 'BITBUCKET_TOKEN'],
+            ['GIT_TOKEN_CREDENTIALS', 'GIT_TOKEN'],
+            ['COPILOT_TOKEN_CREDENTIALS', 'COPILOT_GITHUB_TOKEN'],
+          ]
+          def bindings = []
+          for (int i = 0; i < secrets.size(); i++) {
+            def id = params[secrets[i][0]]
+            if (id) bindings << string(credentialsId: id, variable: secrets[i][1])
+          }
+          def repoUrl = params.REPO_URL ?: env.SDLC_WORK_REPO_URL
+          if (!repoUrl) error('Set REPO_URL (parameter) or SDLC_WORK_REPO_URL (agent environment).')
+          withCredentials(bindings) {
+            withEnv([
+              "REPO=${repoUrl}",
+              "AGENT_NAME=${params.AGENT ?: 'copilot'}",
+              "ATL=${params.SDLC_ATL ?: (env.SDLC_ATL ?: '')}",
+            ]) {
+              // The shebang stops Jenkins' default `sh -x` tracing, which would print tokens that come from the
+              // agent's environment (only withCredentials values are masked).
+              sh '''#!/bin/bash
+                set -eu
+                # Parameter, then the agent's SDLC_ATL (an empty parameter must not hide it), then the wizard's install.
+                ATL="${ATL:-${SDLC_ATL:-$HOME/.sdlc/bin/sdlc-atl.mjs}}"
+                echo "sdlc-atl: $ATL"
+                TOKEN="${GIT_TOKEN:-${BITBUCKET_TOKEN:-}}"
+                rm -rf repo
+                git -c http.extraHeader="Authorization: Bearer $TOKEN" clone --quiet "$REPO" repo
+                cd repo
+                git config http.extraHeader "Authorization: Bearer $TOKEN"
+                git config user.name "${SDLC_BOT_NAME:-sdlc bot}"
+                git config user.email "${SDLC_BOT_EMAIL:-sdlc-bot@example.invalid}"
+                node "$ATL" work --poll --agent "$AGENT_NAME"
+              '''
+            }
+          }
+        }
+      }
+    }
+  }
+  post {
+    always {
+      // Run logs and reports from `sdlc-atl work` (agent output, gate result) for anyone following up.
+      archiveArtifacts artifacts: 'repo/.sdlc/work/**', allowEmptyArchive: true
+      deleteDir()
+    }
+  }
+}

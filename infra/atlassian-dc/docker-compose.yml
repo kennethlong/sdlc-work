@@ -91,8 +91,41 @@ services:
       - "127.0.0.1:${BITBUCKET_PORT:-7990}:7990"
       - "127.0.0.1:${BITBUCKET_SSH_PORT:-7999}:7999"
 
+  # Jenkins for the headless "work this ticket" loop (W-4): polls Jira and runs `sdlc-atl work --poll` in a fresh
+  # clone. Configured as code (jenkins/casc), no wizard. The sdlc-work repo is mounted read-only for the CLI, the
+  # skills and the pipeline. The apps are reached by the same *.localhost URLs as on the host: *.localhost always
+  # means loopback (curl/git hard-code it), so the container forwards its own loopback ports to the app containers
+  # (SDLC_LOCAL_FORWARDS, socat) and Jenkins itself listens on 8081, leaving 8080 for Jira.
+  jenkins:
+    build: ./jenkins
+    image: sdlc-jenkins:local
+    restart: unless-stopped
+    environment:
+      JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:-}
+      JENKINS_OPTS: --httpPort=8081
+      SDLC_LOCAL_FORWARDS: "${JIRA_PORT:-8080}:jira:8080 ${CONFLUENCE_PORT:-8090}:confluence:8090 ${BITBUCKET_PORT:-7990}:bitbucket:7990"
+      SDLC_JENKINS_URL: http://localhost:${JENKINS_PORT:-8081}/
+      SDLC_ATL: /opt/sdlc-work/plugins/sdlc/bin/sdlc-atl.mjs
+      SDLC_WORK_REPO_URL: ${SDLC_WORK_REPO_URL:-http://bitbucket.localhost:7990/scm/sdlc/sandbox.git}
+      JIRA_BASE_URL: ${JIRA_BASE_URL:-http://jira.localhost:8080}
+      JIRA_PAT: ${JIRA_PAT:-}
+      CONFLUENCE_BASE_URL: ${CONFLUENCE_BASE_URL:-http://confluence.localhost:8090}
+      CONFLUENCE_PAT: ${CONFLUENCE_PAT:-}
+      BITBUCKET_BASE_URL: ${BITBUCKET_BASE_URL:-http://bitbucket.localhost:7990}
+      BITBUCKET_TOKEN: ${BITBUCKET_TOKEN:-}
+      # Dev: filled from `gh auth token` by dc.ps1. A real deployment uses a bot account's token with Copilot access.
+      COPILOT_GITHUB_TOKEN: ${COPILOT_GITHUB_TOKEN:-}
+    volumes:
+      - jenkinsdata:/var/jenkins_home
+      - ./jenkins/casc:/casc:ro
+      - ../..:/opt/sdlc-work:ro
+    ports:
+      - "127.0.0.1:${JENKINS_PORT:-8081}:8081"
+
 volumes:
   pgdata:
   jiradata:
   confluencedata:
   bitbucketdata:
+  jenkinsdata:

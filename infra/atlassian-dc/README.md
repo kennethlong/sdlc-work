@@ -8,6 +8,7 @@ Jira/Confluence bridge against the same product type that work runs.
 | Jira Software | http://jira.localhost:8080 | 10.3.25 (LTS) |
 | Confluence | http://confluence.localhost:8090 | 10.2.18 (LTS) |
 | Bitbucket DC | http://bitbucket.localhost:7990 | 9.4.24 (LTS), project `SDLC`, repo `sandbox` |
+| Jenkins | http://localhost:8081 | LTS (JDK 21), job `sdlc-work-poll` |
 | Postgres 16 | localhost:5433 (host), `postgres:5432` (in network) | |
 
 All ports bind to 127.0.0.1 only. The apps need about 10 GB of RAM together. Requires Docker Desktop and Node 22+.
@@ -50,6 +51,32 @@ Put the company **developer license** keys in `.env` before the first `up` to us
 ./dc.ps1 reset                  # stop and wipe all data (asks for confirmation); next `up` rebuilds everything
 ./dc.ps1 up -NoSetup            # containers only
 ```
+
+## Jenkins: the headless work loop
+
+`./dc.ps1 up` also builds and starts Jenkins (`jenkins/Dockerfile`: Node 24, git, uv, GitHub Copilot CLI),
+configured as code (`jenkins/casc/jenkins.yaml`), with no setup wizard. Log in with `JENKINS_ADMIN_USER` /
+`JENKINS_ADMIN_PASSWORD` (`./dc.ps1 creds`).
+
+- **Job `sdlc-work-poll`** runs every 5 minutes, never concurrently: a fresh clone of `SDLC_WORK_REPO_URL`
+  (default `sandbox`), then `sdlc-atl work --poll --agent copilot`. The pipeline is
+  `templates/ci/jenkins/Jenkinsfile.sdlc-work` (the same file works on a work Jenkins, with credential ids as
+  parameters); it is read when Jenkins starts, so restart Jenkins after editing it (`docker compose -p
+  sdlc-atlassian restart jenkins`). The same goes for `npm run bundle`: the job runs the CLI the container
+  installed at start (`~/.sdlc/bin`, printed as `sdlc-atl: …` in the build log).
+- Demo: `node scripts/demo-headless.ts` commits a `.sdlc/config.json` to the sandbox repo, creates a clear and a
+  vague `ai-ready` story, triggers the job and prints what happened (run `node scripts/seed-showcase.ts` first).
+- **The sdlc-work repo is mounted read-only** at `/opt/sdlc-work`: at start the container installs its CLI (to
+  `~/.sdlc/bin`, which the job runs) and the
+  container installs the skills for the Copilot CLI and registers the MCP server (`node setup.mjs`, log in
+  `$JENKINS_HOME/sdlc-setup.log`).
+- **Credentials** come from `.env` as environment variables, never from the image: the Atlassian PATs, the
+  Bitbucket token, and `COPILOT_GITHUB_TOKEN`, which `dc.ps1` takes from your `gh` login when empty (dev only; a
+  real deployment uses a bot account's token with Copilot access). `up` recreates Jenkins after setup so it gets
+  fresh tokens. The pipeline never traces commands (no token in build logs).
+- **Same URLs inside:** `*.localhost` always means loopback (curl and git hard-code it), so the container forwards
+  its own loopback ports 8080/8090/7990 to the app containers (`SDLC_LOCAL_FORWARDS`) and Jenkins listens on 8081.
+- Stop the loop: disable the job in Jenkins, or `docker compose -p sdlc-atlassian stop jenkins`.
 
 ## Licenses
 

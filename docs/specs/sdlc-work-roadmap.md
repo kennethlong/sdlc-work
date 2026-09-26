@@ -291,11 +291,54 @@ real repo, then build the differentiators. Source: the crew review (docs/researc
 - **Depends on:** D-4
 
 ### D-6 — Headless "work this ticket" for Data Center
-- **Scope:** The Cloud-only vendor pattern, on DC
+- **Scope:** The Cloud-only vendor pattern, on DC (delivered by W-1..W-5)
 - **Acceptance criteria:**
-  - A Jira Automation webhook triggers a CI job running `claude -p` with the skills
+  - A labelled story is picked up by CI and worked by an AI agent with the skills (Copilot CLI first)
   - Progress goes to Jira; a draft PR opens on Bitbucket DC
-- **Depends on:** P-1, T-5
+- **Depends on:** W-5
+
+### W-1 — sdlc-atl work KEY: one headless run
+- **Scope:** Everything a CI job does for one ticket, as one testable command
+- **Acceptance criteria:**
+  - Claims the story (assign to the bot, In Progress, comment with the build link, `ai-ready` → `ai-running`)
+  - Branches `feature/KEY-slug` from the base, imports the brief, runs the configured agent headless (`copilot`, `claude` or `codex`) with the sdlc-ticket skill and a time limit
+  - Gate: the execution report must pass; then pushes, opens a draft PR, publishes the review and the verification page, moves the story to the review status (never Done)
+  - Failures comment the reason and build link, label `ai-failed`; nothing is pushed to the base branch
+- **Files touched (estimate):** `packages/atlassian/src/headless.ts`, `packages/atlassian/src/cli.ts`
+- **Depends on:** none
+
+### W-2 — Polling, eligibility and a kill switch
+- **Scope:** Pick up work without Jira admin rights
+- **Acceptance criteria:**
+  - `sdlc-atl work --poll` runs the repo's JQL (`work.jql`, default: label `ai-ready`, not running) and works eligible stories one at a time
+  - Eligibility: issue types, maximum story points, component allow-list; ineligible stories get a comment and `ai-skipped`
+  - Kill switch: `work.enabled: false` or `SDLC_WORK=off`; a concurrency limit
+- **Files touched (estimate):** `packages/atlassian/src/headless.ts`, `packages/atlassian/src/cli.ts`
+- **Depends on:** W-1
+
+### W-3 — Clarification loop
+- **Scope:** The agent asks instead of guessing
+- **Acceptance criteria:**
+  - When the story is ambiguous the agent writes questions instead of code; they are posted as a Jira comment, label `ai-needs-info`
+  - A human reply makes the story eligible again; the next run sees the conversation in the brief
+- **Files touched (estimate):** `packages/atlassian/src/headless.ts`
+- **Depends on:** W-2
+
+### W-4 — Jenkins in the local stack
+- **Scope:** A CI server to prove the loop locally
+- **Acceptance criteria:**
+  - `./dc.ps1 up` also starts Jenkins, configured as code (no clicking), with node, git, uv and the Copilot CLI
+  - A job polls every few minutes and runs `sdlc-atl work --poll` in a fresh clone; a Jenkinsfile template for work
+- **Files touched (estimate):** `infra/atlassian-dc/*`, `templates/ci/jenkins/*`
+- **Depends on:** none
+
+### W-5 — End-to-end demo
+- **Scope:** Label a story, get a draft PR
+- **Acceptance criteria:**
+  - On the local stack, labelling a story `ai-ready` ends in a draft Bitbucket PR, a review, a verification page and the story In Review, with progress comments in Jira
+  - A story with missing details ends in questions instead of code
+- **Files touched (estimate):** `scripts/`, docs
+- **Depends on:** W-3, W-4
 
 ### D-7 — Tests from acceptance criteria
 - **Scope:** Make "does it meet the ticket" mechanical

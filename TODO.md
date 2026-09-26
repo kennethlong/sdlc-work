@@ -52,7 +52,12 @@ review, which has the evidence (file:line) and effort for each item. Work top to
 - [ ] **D3** [SCRUM-180](https://kennyalanlong.atlassian.net/browse/SCRUM-180) Verified findings with confidence + suggested fix
 - [ ] **D4** [SCRUM-181](https://kennyalanlong.atlassian.net/browse/SCRUM-181) AI attribution: commit trailers (key, agent, model) + Agent Trace, rolled up into the PR and Jira
 - [ ] **D5** [SCRUM-189](https://kennyalanlong.atlassian.net/browse/SCRUM-189) `sdlc-atl metrics` (cycle time, review rounds, rework, escaped defects, token cost) → Confluence / DX
-- [ ] **D6** [SCRUM-182](https://kennyalanlong.atlassian.net/browse/SCRUM-182) Headless "work this ticket" for Data Center: Jira Automation webhook → CI `claude -p` → progress to Jira → draft PR on Bitbucket DC
+- [x] **D6** [SCRUM-182](https://kennyalanlong.atlassian.net/browse/SCRUM-182) Headless "work this ticket" for Data Center: label `ai-ready` → Jenkins polls → Copilot CLI works it → progress and questions in Jira → draft PR on Bitbucket DC ([docs/headless.md](docs/headless.md))
+  - [x] **W1** [SCRUM-294](https://kennyalanlong.atlassian.net/browse/SCRUM-294) `sdlc-atl work KEY`: one headless run (runner-driven plan → execute → report)
+  - [x] **W2** [SCRUM-296](https://kennyalanlong.atlassian.net/browse/SCRUM-296) Polling, eligibility, kill switch
+  - [x] **W3** [SCRUM-297](https://kennyalanlong.atlassian.net/browse/SCRUM-297) Clarification loop
+  - [x] **W4** [SCRUM-295](https://kennyalanlong.atlassian.net/browse/SCRUM-295) Jenkins in the local stack
+  - [x] **W5** [SCRUM-298](https://kennyalanlong.atlassian.net/browse/SCRUM-298) End-to-end demo
 - [ ] **D7** [SCRUM-183](https://kennyalanlong.atlassian.net/browse/SCRUM-183) Tests from acceptance criteria (EARS / Given-When-Then → property and acceptance tests; acceptance criterion → test → verification table)
 - [ ] **D8** [SCRUM-184](https://kennyalanlong.atlassian.net/browse/SCRUM-184) Enforce the learning loop in CI (the RCA's regression test fails before the fix and passes after; solutions index)
 - [ ] **D9** [SCRUM-177](https://kennyalanlong.atlassian.net/browse/SCRUM-177) CI self-heal on Jenkins / Bitbucket DC with a bounded number of retries

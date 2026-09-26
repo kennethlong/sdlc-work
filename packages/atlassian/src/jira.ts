@@ -162,6 +162,18 @@ export class JiraClient {
     await this.http.put(`/rest/api/2/issue/${encodeURIComponent(key)}`, { fields });
   }
 
+  /** Add and remove labels in one atomic edit (no read-modify-write race with people editing the issue). */
+  async editLabels(key: string, add: string[] = [], remove: string[] = []) {
+    const ops = [...add.map((l) => ({ add: l })), ...remove.map((l) => ({ remove: l }))];
+    if (ops.length) await this.http.put(`/rest/api/2/issue/${encodeURIComponent(key)}`, { update: { labels: ops } });
+  }
+
+  /** Assign to a user from `myself()` (DC: name; Cloud: accountId); `null` unassigns. */
+  async assign(key: string, user: { name?: string; accountId?: string } | null) {
+    const body = user === null ? (this.flavor === 'cloud' ? { accountId: null } : { name: null }) : this.flavor === 'cloud' ? { accountId: user.accountId } : { name: user.name };
+    await this.http.put(`/rest/api/2/issue/${encodeURIComponent(key)}/assignee`, body);
+  }
+
   async deleteIssue(key: string, deleteSubtasks = true) {
     await this.http.request('DELETE', `/rest/api/2/issue/${encodeURIComponent(key)}`, { query: { deleteSubtasks }, tolerate: [404] });
   }
@@ -233,7 +245,7 @@ export class JiraClient {
 
   comments(key: string) {
     return this.http
-      .get<{ comments: { id: string; body: string; author: { name: string }; created: string }[] }>(`/rest/api/2/issue/${encodeURIComponent(key)}/comment`)
+      .get<{ comments: { id: string; body: string; author: { name: string; accountId?: string; displayName?: string }; created: string }[] }>(`/rest/api/2/issue/${encodeURIComponent(key)}/comment`)
       .then((r) => r.comments);
   }
 

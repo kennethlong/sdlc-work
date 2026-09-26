@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Manage the local Jira + Confluence Data Center stack.
+  Manage the local Jira + Confluence + Bitbucket Data Center stack, plus Jenkins for the headless work loop.
 .EXAMPLE
   ./dc.ps1 up                       # everything: .env, containers, setup wizards, SDLC project/space, PATs
   ./dc.ps1 up -NoSetup              # containers only
@@ -10,6 +10,7 @@
   ./dc.ps1 creds                    # show the admin logins (local dev only)
   ./dc.ps1 status
   ./dc.ps1 logs jira
+  ./dc.ps1 logs jenkins
   ./dc.ps1 down                     # stop, keep data
   ./dc.ps1 reset                    # stop and DELETE all data volumes
   ./dc.ps1 rebuild                  # reset + up, no prompt: a fresh instance (new 3-hour test license window)
@@ -214,10 +215,43 @@ function Invoke-Setup {
 }
 
 function Show-Creds {
-    foreach ($p in 'JIRA', 'CONFLUENCE', 'BITBUCKET') {
+    foreach ($p in 'JIRA', 'CONFLUENCE', 'BITBUCKET', 'JENKINS') {
         $name = $p.ToLower()
         Write-Host ("{0,-11} {1}  user: {2}  password: {3}" -f $name, $publicUrls[$name], (Get-EnvValue "$($p)_ADMIN_USER" 'admin'), (Get-EnvValue "$($p)_ADMIN_PASSWORD" '?'))
     }
+}
+
+# Jenkins is configured as code from the environment: an admin password, and the tokens the poll job uses. The
+# Copilot CLI needs a GitHub token with Copilot access; for local dev take the developer's `gh` login (a real
+# deployment uses a bot account's token). The Atlassian PATs come from `setup`, so Jenkins is recreated after it.
+function Initialize-JenkinsSetup {
+    if (-not (Get-EnvValue 'JENKINS_ADMIN_USER' '')) { Set-EnvValue 'JENKINS_ADMIN_USER' 'admin' }
+    if (-not (Get-EnvValue 'JENKINS_ADMIN_PASSWORD' '')) { Set-EnvValue 'JENKINS_ADMIN_PASSWORD' (New-Secret) }
+    if (-not (Get-EnvValue 'COPILOT_GITHUB_TOKEN' '') -and (Get-Command gh -ErrorAction SilentlyContinue)) {
+        $ErrorActionPreference = 'Continue'
+        $token = (gh auth token 2>$null | Out-String).Trim()
+        if ($token) { Set-EnvValue 'COPILOT_GITHUB_TOKEN' $token; Write-Host 'jenkins: COPILOT_GITHUB_TOKEN taken from your gh login (dev only)' }
+        else { Write-Host 'jenkins: no COPILOT_GITHUB_TOKEN (run gh auth login, or set it in the env file); the Copilot agent will not run' }
+    }
+}
+
+function Get-JenkinsState {
+    try {
+        $r = Invoke-WebRequest -Uri "$($apps.jenkins)/login" -UseBasicParsing -TimeoutSec 5
+        if ($r.StatusCode -eq 200) { return 'RUNNING' }
+        return "HTTP $($r.StatusCode)"
+    } catch {
+        return 'DOWN'
+    }
+}
+
+function Wait-Jenkins {
+    $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
+    while ((Get-JenkinsState) -ne 'RUNNING') {
+        if ((Get-Date) -gt $deadline) { throw 'Timed out waiting for Jenkins. Try ./dc.ps1 logs jenkins.' }
+        Start-Sleep -Seconds 5
+    }
+    Write-Host '  jenkins=RUNNING'
 }
 
 # Bitbucket sets itself up from SETUP_* env vars at first start, so its license and admin password must exist
@@ -251,11 +285,15 @@ $apps = [ordered]@{
     jira       = "http://localhost:$(Get-EnvValue 'JIRA_PORT' '8080')"
     confluence = "http://localhost:$(Get-EnvValue 'CONFLUENCE_PORT' '8090')"
     bitbucket  = "http://localhost:$(Get-EnvValue 'BITBUCKET_PORT' '7990')"
+    jenkins    = "http://localhost:$(Get-EnvValue 'JENKINS_PORT' '8081')"
 }
+# The Atlassian apps (Jenkins has no /status endpoint and is checked separately).
+$atlassian = @('jira', 'confluence', 'bitbucket')
 $publicUrls = [ordered]@{
     jira       = "http://jira.localhost:$(Get-EnvValue 'JIRA_PORT' '8080')"
     confluence = "http://confluence.localhost:$(Get-EnvValue 'CONFLUENCE_PORT' '8090')"
     bitbucket  = "http://bitbucket.localhost:$(Get-EnvValue 'BITBUCKET_PORT' '7990')"
+    jenkins    = "http://localhost:$(Get-EnvValue 'JENKINS_PORT' '8081')"
 }
 
 switch ($Command) {
@@ -270,12 +308,18 @@ switch ($Command) {
     'up' {
         if (-not (Test-Path $EnvFile)) { & $PSCommandPath init -EnvFile $EnvFile -Project $Project }
         Initialize-BitbucketSetup
+        Initialize-JenkinsSetup
         Initialize-Databases
         Invoke-Compose up -d
         if ($LASTEXITCODE) { throw 'docker compose up failed' }
         Write-Host 'Waiting for apps (first start takes several minutes)...'
-        Wait-Apps @($apps.Keys)
-        if (-not $NoSetup) { Invoke-Setup }
+        Wait-Apps $atlassian
+        if (-not $NoSetup) {
+            Invoke-Setup
+            # setup wrote fresh PATs/tokens to the env file; recreate Jenkins so its jobs get them.
+            Invoke-Compose up -d jenkins | Out-Null
+        }
+        Wait-Jenkins
         Write-Host ''
         foreach ($k in $publicUrls.Keys) { Write-Host ("{0,-11} {1}" -f "$($k):", $publicUrls[$k]) }
         if (-not $NoSetup) {
@@ -288,7 +332,8 @@ switch ($Command) {
     'creds' { Show-Creds }
     'status' {
         Invoke-Compose ps
-        foreach ($k in $apps.Keys) { Write-Host ("{0,-11} {1}" -f $k, (Get-AppState $apps[$k])) }
+        foreach ($k in $atlassian) { Write-Host ("{0,-11} {1}" -f $k, (Get-AppState $apps[$k])) }
+        Write-Host ("{0,-11} {1}" -f 'jenkins', (Get-JenkinsState))
     }
     'logs' {
         if ($Service) { Invoke-Compose logs -f --tail 200 $Service } else { Invoke-Compose logs -f --tail 100 }

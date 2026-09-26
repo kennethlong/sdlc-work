@@ -60,6 +60,8 @@ export type SyncOptions = {
    */
   doneWhen?: 'verified' | 'merged';
   prState?: (id: string) => Promise<'open' | 'merged' | 'declined' | undefined>;
+  /** Only these issue keys (e.g. a headless run for one ticket); default: everything in the state. */
+  only?: string[];
   /** Statuses never moved out of except to Done (config `jira.hold`), e.g. ["QA", "Blocked"]. */
   hold?: string[];
   /** Space for report pages when there is no breakdown page to nest them under (Track B, or unfiled PRD). */
@@ -70,7 +72,8 @@ export type SyncOptions = {
 export async function syncProgress(opts: SyncOptions): Promise<SyncReport> {
   const { jira, confluence, breakdown, state, dryRun = false } = opts;
   const transitions = { ...DEFAULT_TRANSITIONS, ...opts.transitions };
-  const tickets = Object.entries(state.data.tickets ?? {}).filter(([, t]) => !t.escalatedTo);
+  const only = opts.only ? new Set(opts.only.map((k) => k.toUpperCase())) : undefined;
+  const tickets = Object.entries(state.data.tickets ?? {}).filter(([k, t]) => !t.escalatedTo && (!only || only.has(k)));
   if (!state.data.epic && !tickets.length) throw new Error('Nothing to sync: file a breakdown (file-breakdown) or import a ticket (import) first.');
   const report: SyncReport = { items: [], tickets: [], unfiled: [], errors: 0 };
   const hold = new Set((opts.hold ?? []).map((h) => h.toLowerCase()));
@@ -82,9 +85,10 @@ export async function syncProgress(opts: SyncOptions): Promise<SyncReport> {
     for (const item of breakdown.items) {
       const key = issueKeyFor(item, children);
       if (!key) {
-        report.unfiled.push(item.id);
+        if (!only) report.unfiled.push(item.id);
         continue;
       }
+      if (only && !only.has(key)) continue;
       const entry = await guarded(key, item.id, item.title, item.status, () => syncOne(key, item.id, item.title, item.status, item.verification, breakdownPage));
       if (entry.pageId) state.data.items[item.id] = { ...state.data.items[item.id]!, verificationPageId: entry.pageId };
       report.items.push(strip(entry));
