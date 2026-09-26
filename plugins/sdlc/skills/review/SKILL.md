@@ -21,7 +21,7 @@ uncommitted changes, say so and ask whether to include them (commit first) or ig
 
 ## 2. Context
 
-- AGENTS.md / CLAUDE.md, and the context docs they point to for the touched areas.
+- AGENTS.md (the project rules), and the context docs it points to for the touched areas.
 - **What was asked**: the ticket brief `.sdlc/tickets/<KEY>.md`, or the GSD phase / plan, or `sdlc-atl import <KEY>`
   if neither exists. Note the acceptance criteria.
 - Every changed file **in full** (not only the diff hunks), plus the tests that cover it.

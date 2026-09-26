@@ -17307,14 +17307,14 @@ var require_turndown_cjs = __commonJS({
         } else if (node.nodeType === 1) {
           replacement = replacementForNode.call(self, node);
         }
-        return join9(output, replacement);
+        return join10(output, replacement);
       }, "");
     }
     function postProcess(output) {
       var self = this;
       this.rules.forEach(function(rule) {
         if (typeof rule.append === "function") {
-          output = join9(output, rule.append(self.options));
+          output = join10(output, rule.append(self.options));
         }
       });
       return output.replace(/^[\t\r\n]+/, "").replace(/[\t\r\n\s]+$/, "");
@@ -17326,7 +17326,7 @@ var require_turndown_cjs = __commonJS({
       if (whitespace.leading || whitespace.trailing) content = content.trim();
       return whitespace.leading + rule.replacement(content, node, this.options) + whitespace.trailing;
     }
-    function join9(output, replacement) {
+    function join10(output, replacement) {
       var s1 = trimTrailingNewlines(output);
       var s2 = trimLeadingNewlines(replacement);
       var nls = Math.max(output.length - s1.length, replacement.length - s2.length);
@@ -25029,9 +25029,9 @@ var require_dist = __commonJS({
 });
 
 // packages/atlassian/src/cli.ts
-import { existsSync as existsSync8, mkdirSync as mkdirSync5, readFileSync as readFileSync9, writeFileSync as writeFileSync4 } from "node:fs";
+import { existsSync as existsSync9, mkdirSync as mkdirSync5, readFileSync as readFileSync10, writeFileSync as writeFileSync5 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { basename as basename2, dirname as dirname6, join as join8, resolve as resolve3 } from "node:path";
+import { basename as basename2, dirname as dirname6, join as join9, resolve as resolve3 } from "node:path";
 import { parseArgs } from "node:util";
 
 // packages/atlassian/src/automation.ts
@@ -25147,18 +25147,72 @@ function withLock(root2, fn2, staleMs = 10 * 6e4) {
   return fn2().finally(release);
 }
 
+// packages/atlassian/src/rules.ts
+import { appendFileSync, existsSync as existsSync2, readFileSync as readFileSync3, writeFileSync as writeFileSync2 } from "node:fs";
+import { join as join2 } from "node:path";
+var IMPORT_LINE = "@AGENTS.md";
+var AGENTS_STUB = `# Agent instructions
+
+Project rules for every AI coding agent (GitHub Copilot, Codex, Claude Code, ...). Claude Code reads them through
+CLAUDE.md, which imports this file. Keep them short and specific; the sdlc skills add rules here when a bug or
+review shows a pattern agents keep getting wrong.
+
+## Commands
+
+- Build: <command>
+- Test: <command>
+- Lint / type-check: <command>
+
+## Conventions
+
+- <the patterns this codebase follows, with a file:line example each>
+`;
+var CLAUDE_STUB = `${IMPORT_LINE}
+
+<!-- Project rules live in AGENTS.md (shared with Copilot, Codex and other agents). Put Claude-only notes below. -->
+`;
+var importsAgents = (text) => /^\s*@AGENTS\.md\s*$/m.test(text);
+function ensureRulesFiles(root2, opts = {}) {
+  const agents = join2(root2, "AGENTS.md");
+  const claude = join2(root2, "CLAUDE.md");
+  const out2 = [];
+  const claudeText = existsSync2(claude) ? readFileSync3(claude, "utf8") : void 0;
+  const claudeHasRules = claudeText !== void 0 && claudeText.replace(/@AGENTS\.md|<!--[\s\S]*?-->/g, "").trim().length > 0;
+  if (existsSync2(agents)) out2.push({ file: "AGENTS.md", action: "ok" });
+  else if (claudeHasRules)
+    out2.push({ file: "AGENTS.md", action: "advice", note: 'Rules live in CLAUDE.md: move the ones every agent needs into AGENTS.md, keep Claude-only notes in CLAUDE.md, and add the line "@AGENTS.md" to CLAUDE.md.' });
+  else {
+    if (!opts.dryRun) writeFileSync2(agents, AGENTS_STUB);
+    out2.push({ file: "AGENTS.md", action: "created", note: "fill in the commands and conventions (or run /sdlc:create-rules when it exists)" });
+  }
+  const agentsExists = opts.dryRun ? out2[0].action !== "advice" : existsSync2(agents);
+  if (claudeText === void 0) {
+    if (agentsExists) {
+      if (!opts.dryRun) writeFileSync2(claude, CLAUDE_STUB);
+      out2.push({ file: "CLAUDE.md", action: "created", note: `imports AGENTS.md` });
+    }
+  } else if (importsAgents(claudeText)) out2.push({ file: "CLAUDE.md", action: "ok" });
+  else if (agentsExists) {
+    if (!opts.dryRun) appendFileSync(claude, `${claudeText.endsWith("\n") ? "" : "\n"}
+${IMPORT_LINE}
+`);
+    out2.push({ file: "CLAUDE.md", action: "import-added" });
+  }
+  return out2;
+}
+
 // packages/atlassian/src/confluence.ts
 import { createHash } from "node:crypto";
 
 // packages/atlassian/src/config.ts
-import { existsSync as existsSync2, readFileSync as readFileSync3 } from "node:fs";
+import { existsSync as existsSync3, readFileSync as readFileSync4 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname as dirname3, join as join2, resolve as resolve2 } from "node:path";
+import { dirname as dirname3, join as join3, resolve as resolve2 } from "node:path";
 function envLookup(opts = {}) {
-  const userFile = join2(homedir(), ".sdlc", "atlassian.env");
+  const userFile = join3(homedir(), ".sdlc", "atlassian.env");
   const explicit = process.env.SDLC_ATLASSIAN_ENV === "user" ? userFile : process.env.SDLC_ATLASSIAN_ENV;
-  const file = opts.envFile ?? explicit ?? findLocalStackEnv(opts.cwd ?? process.cwd()) ?? (existsSync2(userFile) ? userFile : void 0);
-  const fromFile = file && existsSync2(file) ? parseEnv(readFileSync3(file, "utf8")) : {};
+  const file = opts.envFile ?? explicit ?? findLocalStackEnv(opts.cwd ?? process.cwd()) ?? (existsSync3(userFile) ? userFile : void 0);
+  const fromFile = file && existsSync3(file) ? parseEnv(readFileSync4(file, "utf8")) : {};
   return (k2) => process.env[k2] || fromFile[k2] || "";
 }
 function loadConfig(opts = {}) {
@@ -25200,8 +25254,8 @@ function parseEnv(text) {
 }
 function findLocalStackEnv(start) {
   for (let dir = resolve2(start); ; dir = dirname3(dir)) {
-    const candidate = join2(dir, "infra", "atlassian-dc", ".env");
-    if (existsSync2(candidate)) return candidate;
+    const candidate = join3(dir, "infra", "atlassian-dc", ".env");
+    if (existsSync3(candidate)) return candidate;
     if (dirname3(dir) === dir) return void 0;
   }
 }
@@ -27206,20 +27260,20 @@ function cyclicItems(items) {
 }
 
 // packages/atlassian/src/engines/index.ts
-import { existsSync as existsSync5, readFileSync as readFileSync5 } from "node:fs";
-import { join as join5 } from "node:path";
+import { existsSync as existsSync6, readFileSync as readFileSync6 } from "node:fs";
+import { join as join6 } from "node:path";
 
 // packages/atlassian/src/engines/gsd.ts
 import { execFile } from "node:child_process";
-import { existsSync as existsSync3, readdirSync } from "node:fs";
+import { existsSync as existsSync4, readdirSync } from "node:fs";
 import { homedir as homedir2 } from "node:os";
-import { join as join3 } from "node:path";
+import { join as join4 } from "node:path";
 import { promisify } from "node:util";
 
 // packages/atlassian/src/engines/text.ts
-import { readFileSync as readFileSync4 } from "node:fs";
+import { readFileSync as readFileSync5 } from "node:fs";
 function readText(path) {
-  return readFileSync4(path, "utf8").replace(/^﻿/, "").replace(/\r\n/g, "\n");
+  return readFileSync5(path, "utf8").replace(/^﻿/, "").replace(/\r\n/g, "\n");
 }
 
 // packages/atlassian/src/engines/gsd.ts
@@ -27244,7 +27298,7 @@ var GsdEngine = class {
     ];
   }
   detect(root2) {
-    return existsSync3(join3(root2, ".planning", "ROADMAP.md"));
+    return existsSync4(join4(root2, ".planning", "ROADMAP.md"));
   }
   async loadBreakdown(root2) {
     const tools = this.toolsPath ?? findGsdTools(root2);
@@ -27268,7 +27322,7 @@ var GsdEngine = class {
         verification
       };
     });
-    const roadmap = readText(join3(root2, ".planning", "ROADMAP.md"));
+    const roadmap = readText(join4(root2, ".planning", "ROADMAP.md"));
     return {
       engine: "gsd",
       title: roadmap.match(/^#\s+Roadmap:\s*(.+)$/m)?.[1]?.trim() ?? "Roadmap",
@@ -27278,24 +27332,24 @@ var GsdEngine = class {
   }
 };
 async function gsdTicketProgress(root2, key) {
-  const quick = join3(root2, ".planning", "quick");
-  if (!existsSync3(quick)) return { status: "not_started", artifacts: [] };
+  const quick = join4(root2, ".planning", "quick");
+  if (!existsSync4(quick)) return { status: "not_started", artifacts: [] };
   const k2 = key.toLowerCase();
   const ticketLine = new RegExp(`^\\**ticket\\**:?\\**\\s*${key.replace(/[-]/g, "\\-")}\\b`, "im");
   const dirs = readdirSync(quick, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).filter((name) => {
     if (new RegExp(`(^|-)${k2.replace(/[-]/g, "\\-")}(-|$)`).test(name.toLowerCase())) return true;
-    return readdirSync(join3(quick, name)).filter((f) => /-(CONTEXT|PLAN)\.md$/.test(f)).some((f) => ticketLine.test(readText(join3(quick, name, f))));
+    return readdirSync(join4(quick, name)).filter((f) => /-(CONTEXT|PLAN)\.md$/.test(f)).some((f) => ticketLine.test(readText(join4(quick, name, f))));
   }).sort();
   const dir = dirs.at(-1);
   if (!dir) return { status: "not_started", artifacts: [] };
   const rel = `.planning/quick/${dir}`;
-  const files = readdirSync(join3(quick, dir)).sort();
+  const files = readdirSync(join4(quick, dir)).sort();
   const artifacts2 = files.filter((f) => f.endsWith(".md")).map((f) => `${rel}/${f}`);
   const verification = readVerification(root2, rel);
   if (verification) return { status: verification.status === "passed" ? "complete" : "needs_attention", verification, artifacts: artifacts2 };
   const summary = files.find((f) => f.endsWith("-SUMMARY.md"));
   if (summary) {
-    const done = /^status:\s*complete\s*$/m.test(readText(join3(quick, dir, summary)).split(/\n---/)[0] ?? "");
+    const done = /^status:\s*complete\s*$/m.test(readText(join4(quick, dir, summary)).split(/\n---/)[0] ?? "");
     return { status: done ? "complete" : "executing", artifacts: artifacts2 };
   }
   return { status: files.some((f) => f.endsWith("-PLAN.md")) ? "planned" : "discussed", artifacts: artifacts2 };
@@ -27344,11 +27398,11 @@ function statusOf(p, v) {
   }
 }
 function readVerification(root2, phaseDir) {
-  const abs = join3(root2, phaseDir);
-  if (!existsSync3(abs)) return void 0;
+  const abs = join4(root2, phaseDir);
+  if (!existsSync4(abs)) return void 0;
   const file = readdirSync(abs).filter((f) => /(^|-)VERIFICATION\.md$/.test(f)).sort().at(-1);
   if (!file) return void 0;
-  const text = readText(join3(abs, file));
+  const text = readText(join4(abs, file));
   const fm = text.match(/^---\n([\s\S]*?)\n---\n?/);
   const meta = {};
   for (const line of fm?.[1]?.split("\n") ?? []) {
@@ -27368,12 +27422,12 @@ async function gsd(tools, cwd, args) {
   return JSON.parse(stdout);
 }
 function findGsdTools(root2) {
-  const rel = join3("gsd-core", "bin", "gsd-tools.cjs");
+  const rel = join4("gsd-core", "bin", "gsd-tools.cjs");
   const candidates = [
     process.env.GSD_TOOLS,
-    ...[".claude", ".codex", ".cursor", ".gemini", ".opencode"].flatMap((d) => [join3(root2, d, rel), join3(homedir2(), d, rel)])
+    ...[".claude", ".codex", ".cursor", ".gemini", ".opencode"].flatMap((d) => [join4(root2, d, rel), join4(homedir2(), d, rel)])
   ].filter((c) => !!c);
-  const found = candidates.find((c) => existsSync3(c));
+  const found = candidates.find((c) => existsSync4(c));
   if (!found) throw new Error(`gsd-tools not found. Install GSD Core (npx @opengsd/gsd-core) or set GSD_TOOLS. Looked in:
   ${candidates.join("\n  ")}`);
   return found;
@@ -27392,8 +27446,8 @@ async function mapLimit(items, limit, fn2) {
 }
 
 // packages/atlassian/src/engines/piv.ts
-import { existsSync as existsSync4, readdirSync as readdirSync2 } from "node:fs";
-import { basename, join as join4 } from "node:path";
+import { existsSync as existsSync5, readdirSync as readdirSync2 } from "node:fs";
+import { basename, join as join5 } from "node:path";
 var PivEngine = class {
   name = "piv";
   specPath;
@@ -27405,9 +27459,9 @@ var PivEngine = class {
   }
   async loadBreakdown(root2, opts = {}) {
     const specRel = this.specPath ?? pickSpec(root2);
-    const spec = parseSpec(readText(join4(root2, specRel)));
-    const plans = artifacts(root2, join4(".claude", "plans"));
-    const reports = artifacts(root2, join4(".claude", "execution-reports"));
+    const spec = parseSpec(readText(join5(root2, specRel)));
+    const plans = artifacts(root2, join5(".claude", "plans"));
+    const reports = artifacts(root2, join5(".claude", "execution-reports"));
     const items = spec.tickets.map((t) => {
       const ids = [t.id, opts.issueKeys?.[t.id]].filter((x2) => !!x2);
       const plan = plans.find((a) => belongsTo(a, ids));
@@ -27428,8 +27482,8 @@ var PivEngine = class {
     return { engine: "piv", title: spec.title, overview: spec.summary, items };
   }
   async ticketProgress(root2, key) {
-    const plan = artifacts(root2, join4(".claude", "plans")).filter((a) => belongsTo(a, [key]));
-    const reports = artifacts(root2, join4(".claude", "execution-reports")).filter((a) => belongsTo(a, [key]));
+    const plan = artifacts(root2, join5(".claude", "plans")).filter((a) => belongsTo(a, [key]));
+    const reports = artifacts(root2, join5(".claude", "execution-reports")).filter((a) => belongsTo(a, [key]));
     const verification = reports.length ? executionVerdict(reports.at(-1)) : void 0;
     return { status: statusOf2(plan.length > 0, verification), verification, artifacts: [...plan, ...reports].map((a) => a.rel) };
   }
@@ -27455,19 +27509,19 @@ function statusOf2(planned, v) {
   return planned ? "planned" : "not_started";
 }
 function specFiles(root2) {
-  const dir = join4(root2, "docs", "specs");
-  return existsSync4(dir) ? readdirSync2(dir).filter((f) => f.endsWith(".md")).map((f) => join4("docs", "specs", f)) : [];
+  const dir = join5(root2, "docs", "specs");
+  return existsSync5(dir) ? readdirSync2(dir).filter((f) => f.endsWith(".md")).map((f) => join5("docs", "specs", f)) : [];
 }
 function pickSpec(root2) {
   const files = specFiles(root2);
   if (files.length === 1) return files[0];
-  if (!files.length) throw new Error(`No ticket breakdown in ${join4(root2, "docs", "specs")} (run /spec first).`);
+  if (!files.length) throw new Error(`No ticket breakdown in ${join5(root2, "docs", "specs")} (run /spec first).`);
   throw new Error(`Several specs in docs/specs (${files.map((f) => basename(f)).join(", ")}): set "spec" in .sdlc/config.json.`);
 }
 function artifacts(root2, rel) {
-  const dir = join4(root2, rel);
-  if (!existsSync4(dir)) return [];
-  return readdirSync2(dir).filter((f) => f.endsWith(".md")).sort().map((f) => ({ rel: join4(rel, f).split("\\").join("/"), name: f.toLowerCase(), text: readText(join4(dir, f)) }));
+  const dir = join5(root2, rel);
+  if (!existsSync5(dir)) return [];
+  return readdirSync2(dir).filter((f) => f.endsWith(".md")).sort().map((f) => ({ rel: join5(rel, f).split("\\").join("/"), name: f.toLowerCase(), text: readText(join5(dir, f)) }));
 }
 function belongsTo(a, ids) {
   return ids.some((id) => {
@@ -27541,8 +27595,8 @@ function escapeRe(s) {
 
 // packages/atlassian/src/engines/index.ts
 function readSdlcConfig(root2) {
-  const file = join5(root2, ".sdlc", "config.json");
-  return existsSync5(file) ? JSON.parse(readFileSync5(file, "utf8")) : {};
+  const file = join6(root2, ".sdlc", "config.json");
+  return existsSync6(file) ? JSON.parse(readFileSync6(file, "utf8")) : {};
 }
 var factories = {
   gsd: () => new GsdEngine(),
@@ -27703,20 +27757,20 @@ async function publishBreakdown(opts, epic, report) {
 }
 
 // packages/atlassian/src/state.ts
-import { existsSync as existsSync6, mkdirSync as mkdirSync3, readFileSync as readFileSync6, renameSync, writeFileSync as writeFileSync2 } from "node:fs";
-import { dirname as dirname4, join as join6 } from "node:path";
+import { existsSync as existsSync7, mkdirSync as mkdirSync3, readFileSync as readFileSync7, renameSync, writeFileSync as writeFileSync3 } from "node:fs";
+import { dirname as dirname4, join as join7 } from "node:path";
 var MAPS = ["items", "tickets", "prs"];
 var StateFile = class {
   path;
   data;
   base;
   constructor(root2) {
-    this.path = join6(root2, ".sdlc", "atlassian.json");
+    this.path = join7(root2, ".sdlc", "atlassian.json");
     this.data = this.read();
     this.base = structuredClone(this.data);
   }
   read() {
-    const data = existsSync6(this.path) ? JSON.parse(readFileSync6(this.path, "utf8")) : { items: {} };
+    const data = existsSync7(this.path) ? JSON.parse(readFileSync7(this.path, "utf8")) : { items: {} };
     data.items ??= {};
     return data;
   }
@@ -27726,7 +27780,7 @@ var StateFile = class {
     try {
       const merged = mergeState(this.base, this.data, this.read());
       const tmp = `${this.path}.${process.pid}.tmp`;
-      writeFileSync2(tmp, JSON.stringify(merged, null, 2) + "\n");
+      writeFileSync3(tmp, JSON.stringify(merged, null, 2) + "\n");
       renameSync(tmp, this.path);
       this.data = merged;
       this.base = structuredClone(merged);
@@ -27887,8 +27941,8 @@ function strip(e) {
 }
 
 // packages/atlassian/src/tickets.ts
-import { existsSync as existsSync7, mkdirSync as mkdirSync4, readFileSync as readFileSync7, writeFileSync as writeFileSync3 } from "node:fs";
-import { dirname as dirname5, join as join7 } from "node:path";
+import { existsSync as existsSync8, mkdirSync as mkdirSync4, readFileSync as readFileSync8, writeFileSync as writeFileSync4 } from "node:fs";
+import { dirname as dirname5, join as join8 } from "node:path";
 var SKILL_NAMES = "_Skills below are `/sdlc:<name>` in Claude Code and `sdlc-<name>` in Copilot, Codex and other agents._";
 var BUG_TYPES = /^(bug|defect|incident|problem)$/i;
 async function importTicket(opts) {
@@ -27935,9 +27989,9 @@ async function importTicket(opts) {
     `_Imported by sdlc-atl. If this turns out bigger than one ticket, escalate: \`sdlc-atl escalate ${issue.key} --epic <EPIC>\` and write a PRD (Track A)._`,
     ""
   ].join("\n");
-  const brief = join7(root2, ".sdlc", "tickets", `${issue.key}.md`);
+  const brief = join8(root2, ".sdlc", "tickets", `${issue.key}.md`);
   mkdirSync4(dirname5(brief), { recursive: true });
-  writeFileSync3(brief, md);
+  writeFileSync4(brief, md);
   state.data.tickets ??= {};
   state.data.tickets[issue.key] = { ...state.data.tickets[issue.key], type, summary: f.summary, engine: engine.name };
   state.save();
@@ -27951,9 +28005,9 @@ function acceptanceCriteria(md) {
 var RCA_PARENT = "Root Cause Analyses";
 async function publishRca(opts) {
   const { jira, confluence, root: root2, key, spaceKey, state } = opts;
-  const file = opts.file ?? join7(root2, "docs", "rca", `${key}.md`);
-  if (!existsSync7(file)) throw new Error(`No RCA doc at ${file} (run /sdlc:rca ${key} first).`);
-  const md = readFileSync7(file, "utf8").replace(/^﻿/, "").replace(/\r\n/g, "\n");
+  const file = opts.file ?? join8(root2, "docs", "rca", `${key}.md`);
+  if (!existsSync8(file)) throw new Error(`No RCA doc at ${file} (run /sdlc:rca ${key} first).`);
+  const md = readFileSync8(file, "utf8").replace(/^﻿/, "").replace(/\r\n/g, "\n");
   const issue = await jira.getIssue(key, "summary");
   if (!issue) throw new Error(`Issue ${key} not found`);
   const warnings = [];
@@ -28314,12 +28368,12 @@ function ghCliToken(host) {
 
 // packages/atlassian/src/review.ts
 var import_yaml = __toESM(require_dist(), 1);
-import { readFileSync as readFileSync8 } from "node:fs";
+import { readFileSync as readFileSync9 } from "node:fs";
 var REVIEW_MARKER = "<!-- sdlc-review -->";
 var SEVERITIES = ["critical", "high", "medium", "low"];
 var isBlocking = (f) => f.severity === "critical" || f.severity === "high";
 function readReview(path) {
-  const text = readFileSync8(path, "utf8").replace(/^﻿/, "").replace(/\r\n/g, "\n");
+  const text = readFileSync9(path, "utf8").replace(/^﻿/, "").replace(/\r\n/g, "\n");
   const m = text.match(/^---\n([\s\S]*?)\n---\n?/);
   if (!m) throw new Error(`${path}: missing YAML front matter with findings`);
   const front = m[1].replace(/^(head|base):[ \t]*([^'"\s#][^\s#]*)[ \t]*$/gm, '$1: "$2"');
@@ -28692,14 +28746,14 @@ ${ConfluenceClient.markdown(page)}
 `;
         if (opt.out) {
           mkdirSync5(dirname6(resolve3(opt.out)), { recursive: true });
-          writeFileSync4(resolve3(opt.out), md);
+          writeFileSync5(resolve3(opt.out), md);
           console.log(`${page.title} -> ${opt.out}`);
         } else process.stdout.write(md);
       } else if (sub === "push") {
         if (!arg) throw new Error("page push FILE --space KEY [--title T] [--parent PAGE_ID]");
         const spaceKey = opt.space ?? cfg.confluence?.space;
         if (!spaceKey) throw new Error("page push needs --space KEY (or confluence.space in .sdlc/config.json)");
-        let md = readFileSync9(resolve3(arg), "utf8").replace(/^﻿/, "").replace(/^<!-- source: [^\n]*-->\n+/, "");
+        let md = readFileSync10(resolve3(arg), "utf8").replace(/^﻿/, "").replace(/^<!-- source: [^\n]*-->\n+/, "");
         const h1 = md.match(/^#\s+(.+)\n+/);
         const title = opt.title ?? h1?.[1]?.trim() ?? basename2(arg, ".md");
         if (h1 && !opt.title) md = md.slice(h1[0].length);
@@ -28711,8 +28765,8 @@ ${ConfluenceClient.markdown(page)}
     case "hooks": {
       const sub = positionals[0] ?? "status";
       if (sub === "install") {
-        const stable = join8(homedir3(), ".sdlc", "bin", "sdlc-atl.mjs");
-        const r = installHook(root, existsSync8(stable) ? selfCommand(stable) : selfCommand());
+        const stable = join9(homedir3(), ".sdlc", "bin", "sdlc-atl.mjs");
+        const r = installHook(root, existsSync9(stable) ? selfCommand(stable) : selfCommand());
         console.log(`post-commit hook ${r.action}: ${r.path}
   commits touching planning artifacts now run \`sync\` in the background (log: .sdlc/sync.log)`);
       } else if (sub === "uninstall") console.log(uninstallHook(root) ? "post-commit hook removed" : "no sdlc-atl hook installed");
@@ -28720,7 +28774,7 @@ ${ConfluenceClient.markdown(page)}
       break;
     }
     case "init": {
-      const file = join8(root, ".sdlc", "config.json");
+      const file = join9(root, ".sdlc", "config.json");
       const merged = {
         ...cfg,
         ...opt.engine ? { engine: opt.engine } : {},
@@ -28730,9 +28784,10 @@ ${ConfluenceClient.markdown(page)}
       };
       if (merged.engine) resolveEngine(root, merged.engine);
       mkdirSync5(dirname6(file), { recursive: true });
-      writeFileSync4(file, JSON.stringify(merged, null, 2) + "\n");
+      writeFileSync5(file, JSON.stringify(merged, null, 2) + "\n");
       console.log(`${file}:
 ${JSON.stringify(merged, null, 2)}`);
+      for (const r of ensureRulesFiles(root)) console.log(`${r.file}: ${r.action}${r.note ? ` (${r.note})` : ""}`);
       break;
     }
     case "import": {

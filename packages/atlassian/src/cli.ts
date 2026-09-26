@@ -27,6 +27,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { hookInstalled, installHook, selfCommand, uninstallHook, withLock } from './automation.ts';
+import { ensureRulesFiles } from './rules.ts';
 import { ConfluenceClient } from './confluence.ts';
 import { connect } from './index.ts';
 import { resolveEngine, readSdlcConfig } from './engines/index.ts';
@@ -273,6 +274,8 @@ try {
       mkdirSync(dirname(file), { recursive: true });
       writeFileSync(file, JSON.stringify(merged, null, 2) + '\n');
       console.log(`${file}:\n${JSON.stringify(merged, null, 2)}`);
+      // One rules file for every agent: AGENTS.md, imported by CLAUDE.md.
+      for (const r of ensureRulesFiles(root)) console.log(`${r.file}: ${r.action}${r.note ? ` (${r.note})` : ''}`);
       break;
     }
 

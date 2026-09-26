@@ -16,7 +16,7 @@ CLI: `node "${CLAUDE_PLUGIN_ROOT}/bin/sdlc-atl.mjs"` (or `sdlc-atl` on PATH in o
 
 ## 2. The codebase, scoped to the task
 
-- Read AGENTS.md / CLAUDE.md and any context docs they point to for this area.
+- Read AGENTS.md (the project rules; CLAUDE.md just imports it) and any context docs it points to for this area.
 - `git ls-files` to map the layout; read the entry points and configuration for the parts the task touches.
 - Find the closest existing example of what the task needs (a similar endpoint, component or test) and read it
   fully. This is the pattern the plan should mirror.

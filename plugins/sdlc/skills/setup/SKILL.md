@@ -70,6 +70,12 @@ and `--prd PAGE_ID` later for a Track A feature. Commit `.sdlc/config.json`; `.s
 mapping state) should be committed too, so teammates share it. `.sdlc/tickets/` and `.sdlc/sync.log` are
 per-developer: suggest adding them to `.gitignore`.
 
+`init` also sets up the **rules file every agent reads**: `AGENTS.md` (Copilot, Codex and others read it
+directly), plus a `CLAUDE.md` that imports it with the line `@AGENTS.md`. It creates what is missing and never
+overwrites. If the repo's rules already live in `CLAUDE.md`, it only advises: help the user move the shared rules
+into `AGENTS.md`, keep Claude-only notes in `CLAUDE.md`, and add `@AGENTS.md` to it. If it created a stub
+`AGENTS.md`, fill in the build/test commands and conventions from the codebase with the user.
+
 ## 3. Automatic sync (recommended)
 
 ```
