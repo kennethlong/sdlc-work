@@ -67,8 +67,8 @@ sdlc-atl init --engine <gsd|piv> --space <CONFLUENCE_SPACE_KEY>
 
 `--space` is where reports go when there is no PRD page to nest them under (Track B, RCAs). Add `--epic KEY`
 and `--prd PAGE_ID` later for a Track A feature. Commit `.sdlc/config.json`; `.sdlc/atlassian.json` (the
-mapping state) should be committed too, so teammates share it. `.sdlc/tickets/` and `.sdlc/sync.log` are
-per-developer: suggest adding them to `.gitignore`.
+mapping state) should be committed too, so teammates share it. `.sdlc/tickets/`, `.sdlc/sync.log` and
+`.sdlc/audit.jsonl*` (the safety hook's log) are per-developer: suggest adding them to `.gitignore`.
 
 `init` also sets up the **rules file every agent reads**: `AGENTS.md` (Copilot, Codex and others read it
 directly), plus a `CLAUDE.md` that imports it with the line `@AGENTS.md`. It creates what is missing and never

@@ -47,6 +47,8 @@ export class PivEngine implements Engine {
         status: statusOf(!!plan, verification),
         source: `${specRel.split('\\').join('/')} (${t.id})`,
         verification,
+        files: t.files,
+        ...(t.issueType ? { issueType: t.issueType } : {}),
       };
     });
     return { engine: 'piv', title: spec.title, overview: spec.summary, items };
@@ -135,7 +137,17 @@ export function executionVerdict(a: Artifact): Verification {
   };
 }
 
-export type SpecTicket = { id: string; title: string; goal: string; acceptanceCriteria: string[]; dependsOn: string[] };
+export type SpecTicket = {
+  id: string;
+  title: string;
+  goal: string;
+  acceptanceCriteria: string[];
+  dependsOn: string[];
+  /** "Files touched" paths (estimates), for the parallel-work overlap check. */
+  files: string[];
+  /** "Type:" line (e.g. Task for chores); undefined = the repo default (Story). */
+  issueType?: string;
+};
 
 /**
  * Parse a `/spec` breakdown. Agents fill the template loosely, so this accepts: "### TICKET-1 — Title" (any dash
@@ -162,6 +174,8 @@ function parseTicketBody(body: string): Omit<SpecTicket, 'id' | 'title'> {
   const lines = body.split('\n');
   let goal = '';
   let dependsOn: string[] = [];
+  let files: string[] = [];
+  let issueType: string | undefined;
   const criteria: string[] = [];
   let inCriteria = false;
   for (const raw of lines) {
@@ -184,13 +198,25 @@ function parseTicketBody(body: string): Omit<SpecTicket, 'id' | 'title'> {
     } else if ((m = item.match(/^acceptance criteria:?\s*(.*)$/i))) {
       if (m[1]) criteria.push(m[1].trim());
       inCriteria = true;
-    } else if (/^files touched/i.test(item)) {
-      // informational
+    } else if ((m = item.match(/^files touched[^:]*:?\s*(.*)$/i))) {
+      files = parseFiles(m[1]!);
+    } else if ((m = item.match(/^(?:issue )?type:\s*([A-Za-z][\w-]*(?: [A-Za-z][\w-]*)?)\s*$/i))) {
+      // Colon required, so a criterion like "Type checks pass" stays a criterion.
+      issueType = m[1]!.trim();
     } else {
       criteria.push(item.replace(/^\[[ xX]\]\s+/, ''));
     }
   }
-  return { goal, acceptanceCriteria: criteria, dependsOn };
+  return { goal, acceptanceCriteria: criteria, dependsOn, files, ...(issueType ? { issueType } : {}) };
+}
+
+/** "`src/a.ts`, src/b/ (+ tests), `cli.ts`" -> paths; words without a dot or slash (e.g. "tests") are dropped. */
+function parseFiles(text: string): string[] {
+  return text
+    .replace(/\([^)]*\)/g, ' ')
+    .split(/[,;]|\s+and\s+/)
+    .map((f) => f.replace(/[`*]/g, '').trim())
+    .filter((f) => f && /[./\\]/.test(f) && !/\s/.test(f));
 }
 
 function escapeRe(s: string) {

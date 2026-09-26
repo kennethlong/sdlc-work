@@ -36,6 +36,8 @@ scope creep: changes that aren't needed for the ticket.
 - **security**: injection (SQL, command, formula, XSS), authn/authz gaps, secrets, unsafe deserialisation,
   missing input validation, data exposure.
 - **performance**: N+1 queries, unbounded loops or memory, work repeated per request.
+- **quality**: duplication (DRY), overly complex or long functions, poor naming, missing types, dead code: only
+  where it makes the code harder to change safely, not taste. Usually medium or low.
 - **tests**: behaviour changed without tests, tests that can't fail, missing edge and error cases.
 - **standards**: violations of the repo's documented conventions (cite the rule), not personal taste.
 
@@ -45,6 +47,11 @@ it. Drop what you can't substantiate. A short list of real problems beats a long
 - **high**: wrong behaviour users will hit, or an acceptance criterion not met.
 - **medium**: an edge-case bug, a missing test for changed behaviour, a clear convention violation.
 - **low**: minor quality or readability issues.
+
+Judge against what the ticket and the codebase actually need. An input the requirements don't cover (another
+currency, a huge number, a locale) is a bug only if the code can realistically receive it today: show the path.
+Otherwise it's at most **low**, worded as a question or an option ("if X is ever needed, ..."), never a reason to
+request changes. Don't send the author to `review-fix` for optional items.
 
 ## 4. Write `.sdlc/reviews/<branch with / replaced by ->.md`
 
@@ -61,13 +68,21 @@ findings:
     title: CSV cells are not escaped against formula injection
     detail: User-controlled values starting with = + - @ are written raw; Excel executes =HYPERLINK(...).
     suggestion: Prefix such cells with a single quote in escapeCell(); add a test per prefix.
+stats:             # from review-scope: files by status (A/M/D) and the last line of "stat"
+  files_added: 1
+  files_modified: 3
+  files_deleted: 0
+  lines_added: 120
+  lines_deleted: 14
 ---
 # Code review: <branch>
 
 <2–5 lines: overall assessment, acceptance criteria status, what's good>
 ```
 
-`file` is repo-relative; `line` is the line in the new version. Write `findings: []` when there are none.
+`file` is repo-relative; `line` is the line in the new version. `category` is one of bug, security,
+performance, quality, tests, standards. Write `findings: []` when there are none. The published comment shows
+the stats and a count per category, so fill `stats` in from the review scope (renamed files count as modified).
 
 ## 5. Publish
 

@@ -7,7 +7,7 @@ import { keyFrom, keysIn, reviewScope } from '../src/git.ts';
 import { resolveKey } from '../src/pr.ts';
 import type { JiraClient } from '../src/jira.ts';
 import { GitHubHost, parseRemote } from '../src/hosts/index.ts';
-import { readReview, renderJiraComment, renderPrComment, REVIEW_MARKER } from '../src/review.ts';
+import { categoryCounts, readReview, renderJiraComment, renderPrComment, REVIEW_MARKER, statsLine } from '../src/review.ts';
 
 const git = (cwd: string, ...a: string[]) => execFileSync('git', a, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 const dirs: string[] = [];
@@ -110,6 +110,43 @@ describe('review files', () => {
   });
 
   it('an empty review approves', () => expect(readReview(write('---\nfindings: []\n---\nAll good.')).verdict).toBe('approved'));
+
+  it('normalises categories (quality included) and renders them with change stats', () => {
+    const r = readReview(
+      write(
+        [
+          '---',
+          'findings:',
+          '  - { severity: medium, category: Code Quality, file: src/a.ts, line: 3, title: Duplicated parser }',
+          '  - { severity: high, category: security, file: src/b.ts, line: 9, title: Injection }',
+          '  - { severity: low, category: quality, file: src/c.ts, title: Long function }',
+          '  - { severity: low, file: src/d.ts, title: No category }',
+          'stats: { files_added: 1, files_modified: 2, files_deleted: 0, lines_added: 120, lines_deleted: 14 }',
+          '---',
+        ].join('\n'),
+      ),
+    );
+    expect(r.findings.map((f) => f.category)).toEqual(['security', 'quality', 'quality', undefined]);
+    expect(r.stats).toEqual({ filesAdded: 1, filesModified: 2, filesDeleted: 0, linesAdded: 120, linesDeleted: 14 });
+    expect(categoryCounts(r.findings)).toEqual([['security', 1], ['quality', 2], ['uncategorised', 1]]);
+    const md = renderPrComment(r, new GitHubHost({ owner: 'o', repo: 'r', token: 't' }), 'abc1234567890');
+    expect(md).toContain('**Changes:** 3 files (1 added, 2 modified) · +120 −14 lines');
+    expect(md).toContain('**By category:** security 1 · quality 2 · uncategorised 1');
+    expect(md).toContain('| 1 | high | security | [src/b.ts:9]');
+    const jira = renderJiraComment(r, 'https://pr');
+    expect(jira).toContain('By category: security 1 · quality 2 · uncategorised 1');
+    expect(jira).toContain('Changes: 3 files (1 added, 2 modified) · +120 −14 lines');
+  });
+
+  it('stays compatible with review files that have no stats or categories', () => {
+    const r = readReview(write('---\nbase: main\nfindings:\n  - { severity: low, file: a.ts, title: t }\n---\n'));
+    expect(r.stats).toBeUndefined();
+    const md = renderPrComment(r, new GitHubHost({ owner: 'o', repo: 'r', token: 't' }), 'abc1234567890');
+    expect(md).not.toContain('**Changes:**');
+    expect(md).toContain('**By category:** uncategorised 1');
+    expect(statsLine(undefined)).toBeUndefined();
+    expect(renderJiraComment(readReview(write('---\nfindings: []\n---\n')), 'https://pr')).toBe('Code review ✅ **approved** (no findings) on [the pull request](https://pr).');
+  });
 });
 
 describe('GitHub host (contract)', () => {

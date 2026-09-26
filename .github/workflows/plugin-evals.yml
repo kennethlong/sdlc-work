@@ -1,0 +1,72 @@
+# Plugin evals (D-1): run the skills against the eval suite in evals/, with and without the plugin, and fail
+# when a case scores below the threshold. Needs an ANTHROPIC_API_KEY repository secret; costs a few dollars per
+# run (about $0.15 per agent run; see evals/README.md), so it runs on demand and on PRs that change skills/evals.
+name: plugin-evals
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Runs per case per arm
+        default: '2'
+      case:
+        description: Case name glob (empty = all)
+        default: ''
+      threshold:
+        description: Minimum with-plugin score per case (0..1)
+        default: '0.75'
+  pull_request:
+    paths:
+      - 'plugins/sdlc/skills/**'
+      - 'evals/**'
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip without an API key
+        id: key
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::notice::ANTHROPIC_API_KEY secret not set; skipping plugin evals"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.key.outputs.skip != 'true'
+        with:
+          node-version: 22
+
+      - name: Install Claude Code
+        if: steps.key.outputs.skip != 'true'
+        run: npm install -g @anthropic-ai/claude-code && claude --version
+
+      - name: Run evals
+        if: steps.key.outputs.skip != 'true'
+        run: |
+          args=(. --trust-plugin --no-publish
+                --allow-tools Write
+                --runs "${{ inputs.runs || '2' }}"
+                --threshold "${{ inputs.threshold || '0.75' }}"
+                --model claude-sonnet-5
+                --judge-model claude-haiku-4-5-20251001
+                --max-cost-usd 20
+                --json evals/results/ci.json)
+          if [ -n "${{ inputs.case }}" ]; then args+=(--case "${{ inputs.case }}"); fi
+          claude plugin eval "${args[@]}"
+
+      - name: Upload results
+        if: always() && steps.key.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-eval-results
+          path: evals/results/
+          if-no-files-found: ignore

@@ -33,9 +33,10 @@ sdlc-setup skill". Details: [docs/getting-started.md](docs/getting-started.md).
 
 | Path | What |
 |---|---|
-| `packages/atlassian` | Jira/Confluence DC client (markdown in/out) and the `sdlc-atl` CLI: `whoami`, `breakdown`, `file-breakdown --epic KEY --prd PAGE_ID [--dry-run]`, `sync [--dry-run]`, Track B: `import KEY`, `publish-rca KEY`, `escalate KEY --epic E` |
-| `plugins/sdlc` | The Claude Code plugin: 15 skills, bundled CLI (`bin/sdlc-atl.mjs`) and MCP launcher |
-| `scripts/install.ps1` | Install for other agents: CLI on PATH, skills in `~/.agents/skills`, MCP server registered with GitHub Copilot CLI |
+| `packages/atlassian` | Jira/Confluence client (Data Center and Cloud, markdown in/out), git hosts (GitHub, Bitbucket DC) and the `sdlc-atl` CLI (`sdlc-atl --help`: breakdown, file-breakdown, import, publish-rca, escalate, review-scope, pr, publish-review, sync, page, hooks, init, whoami) |
+| `plugins/sdlc` | The Claude Code plugin: 19 skills, the `system-reviewer` agent, safety hooks, bundled CLI (`bin/sdlc-atl.mjs`) and MCP launcher |
+| `setup.mjs`, `scripts/setup/` | Getting-started wizard: prerequisites, skills + MCP per AI tool, credentials ([docs/getting-started.md](docs/getting-started.md)); `scripts/install.ps1` runs it without questions |
+| `evals/` | Plugin evals for spec, ticket, rca and review (`claude plugin eval . --allow-tools Write`); CI in `.github/workflows/plugin-evals.yml` |
 | `scripts/mcp-atlassian.mjs` | Launches [mcp-atlassian](https://github.com/sooperset/mcp-atlassian) against the configured DC instances; wired in `.mcp.json` |
 | `infra/atlassian-dc` | One-command local Jira + Confluence + Bitbucket DC (`./dc.ps1 up`) |
 | `templates/ci` | CI review templates: GitHub Actions, Jenkins for Bitbucket DC (untested) |

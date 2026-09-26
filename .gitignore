@@ -37,3 +37,5 @@ setup-debug/
 .sdlc/tickets/
 .sdlc/sync.log
 .sdlc/sync.lock
+.sdlc/audit.jsonl*
+.sdlc/context/

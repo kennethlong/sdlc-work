@@ -144,6 +144,14 @@ export function networkReason(err) {
  *   - `$1`, `$2`, `$ARGUMENTS` (only Claude Code substitutes them) become named placeholders from the skill's
  *     `argument-hint`, with a note saying they stand for what the user passed.
  */
+/** For files that sit beside a SKILL.md (templates): CLI on PATH and `sdlc-<name>` skill names. */
+export function portText(text) {
+  return String(text)
+    .split('node "${CLAUDE_PLUGIN_ROOT}/bin/sdlc-atl.mjs"').join('sdlc-atl')
+    .split('${CLAUDE_PLUGIN_ROOT}/bin/sdlc-atl.mjs').join('sdlc-atl')
+    .replace(/\/sdlc:([a-z-]+)/g, '/sdlc-$1');
+}
+
 export function portSkill(text, name) {
   let t = String(text).replace(/\r\n/g, '\n');
   const hint = t.match(/^argument-hint:\s*["']?(.*?)["']?\s*$/m)?.[1] ?? '';

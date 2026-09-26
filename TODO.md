@@ -14,8 +14,8 @@ review, which has the evidence (file:line) and effort for each item. Work top to
 - [x] **S5** [SCRUM-151](https://kennyalanlong.atlassian.net/browse/SCRUM-151) Markup: escape Jira special characters; fix the strikethrough regex; negative tests (B6)
 - [x] **S6** [SCRUM-152](https://kennyalanlong.atlassian.net/browse/SCRUM-152) Review `head`/`base` read as strings (B7); validate Jira keys against the project keys, add `--branch`/`--pr`, record existing PRs (B8); hook path with `resolve()` (B9)
 - [x] **S7** [SCRUM-153](https://kennyalanlong.atlassian.net/browse/SCRUM-153) Sync: catch errors per item and continue; configurable statuses never moved backwards (B11); reach Done by status category; multi-hop transitions; set Resolution on Done
-- [ ] **F1** [SCRUM-155](https://kennyalanlong.atlassian.net/browse/SCRUM-155) Complete the deviations table (≈13 missing rows); fix stale names (`plan-feature`, the "sweep" attribution)
-- [ ] **B12** [SCRUM-154](https://kennyalanlong.atlassian.net/browse/SCRUM-154) Doc drift: README path `C:Codesdlc-work`, the stale CLI list, `import-story`/`implement-fix` names, "12 skills"
+- [x] **F1** [SCRUM-155](https://kennyalanlong.atlassian.net/browse/SCRUM-155) Complete the deviations table (≈13 missing rows); fix stale names (`plan-feature`, the "sweep" attribution)
+- [x] **B12** [SCRUM-154](https://kennyalanlong.atlassian.net/browse/SCRUM-154) Doc drift: README path `C:Codesdlc-work`, the stale CLI list, `import-story`/`implement-fix` names, "12 skills"
 
 ## 2. Team readiness
 
@@ -33,14 +33,14 @@ review, which has the evidence (file:line) and effort for each item. Work top to
 
 ## 3. Restore reference strengths
 
-- [ ] **F2** [SCRUM-158](https://kennyalanlong.atlassian.net/browse/SCRUM-158) `/sdlc:system-review` + a `system-reviewer` agent (divergence classification, root cause, /10 alignment score, proposed rule/skill text; reads piv reports + GSD SUMMARY deviations)
-- [ ] **F3** [SCRUM-159](https://kennyalanlong.atlassian.net/browse/SCRUM-159) `/sdlc:create-rules` (descending-generality AGENTS.md/CLAUDE.md, rules cited to `file:line`, `.claude/context/` table, Gotchas); rca/fix/review-fix point to it
-- [ ] **F4** [SCRUM-160](https://kennyalanlong.atlassian.net/browse/SCRUM-160) Restore plan depth for piv (strategic-thinking checklist, New Files, Patterns with code, 6 validation levels incl. manual + E2E, the "No Prior Knowledge" test)
-- [ ] **F5** [SCRUM-171](https://kennyalanlong.atlassian.net/browse/SCRUM-171) E2E level (Playwright MCP / agent-browser, Windows note; `gsd-dom-verifier` for gsd)
-- [ ] **F6** [SCRUM-161](https://kennyalanlong.atlassian.net/browse/SCRUM-161) Spec fidelity (500–700-line / 20–60-minute sizing, dependency graph + waves, file-overlap check, local PRD paths, optional epic, Task for chores)
-- [ ] **F7** [SCRUM-162](https://kennyalanlong.atlassian.net/browse/SCRUM-162) `/sdlc:commit` (key-tagged, "AI Layer Changes" summary); widen `prime` (several keys, Confluence pages); `quality` category + stats in review
-- [ ] **F8** [SCRUM-163](https://kennyalanlong.atlassian.net/browse/SCRUM-163) Baseline safety hooks for piv (secret/destructive guard, JSONL audit log)
-- [ ] **D1** [SCRUM-164](https://kennyalanlong.atlassian.net/browse/SCRUM-164) Plugin evals (`claude plugin eval`, with vs without the skills) in CI
+- [x] **F2** [SCRUM-158](https://kennyalanlong.atlassian.net/browse/SCRUM-158) `/sdlc:system-review` + a `system-reviewer` agent (divergence classification, root cause, /10 alignment score, proposed rule/skill text; reads piv reports + GSD SUMMARY deviations)
+- [x] **F3** [SCRUM-159](https://kennyalanlong.atlassian.net/browse/SCRUM-159) `/sdlc:create-rules` (descending-generality AGENTS.md/CLAUDE.md, rules cited to `file:line`, `.claude/context/` table, Gotchas); rca/fix/review-fix point to it
+- [x] **F4** [SCRUM-160](https://kennyalanlong.atlassian.net/browse/SCRUM-160) Restore plan depth for piv (strategic-thinking checklist, New Files, Patterns with code, 6 validation levels incl. manual + E2E, the "No Prior Knowledge" test)
+- [x] **F5** [SCRUM-171](https://kennyalanlong.atlassian.net/browse/SCRUM-171) E2E level (Playwright MCP / agent-browser, Windows note; `gsd-dom-verifier` for gsd)
+- [x] **F6** [SCRUM-161](https://kennyalanlong.atlassian.net/browse/SCRUM-161) Spec fidelity (500–700-line / 20–60-minute sizing, dependency graph + waves, file-overlap check, local PRD paths, optional epic, Task for chores)
+- [x] **F7** [SCRUM-162](https://kennyalanlong.atlassian.net/browse/SCRUM-162) `/sdlc:commit` (key-tagged, "AI Layer Changes" summary); widen `prime` (several keys, Confluence pages); `quality` category + stats in review
+- [x] **F8** [SCRUM-163](https://kennyalanlong.atlassian.net/browse/SCRUM-163) Baseline safety hooks for piv (secret/destructive guard, JSONL audit log)
+- [x] **D1** [SCRUM-164](https://kennyalanlong.atlassian.net/browse/SCRUM-164) Plugin evals (`claude plugin eval`, with vs without the skills) in CI
 
 ## 4. Pilot
 

@@ -8,7 +8,7 @@
 import type { ConfluenceClient } from './confluence.ts';
 import type { JiraClient, JiraIssue } from './jira.ts';
 import type { StateFile } from './state.ts';
-import { cyclicItems, waves, type Breakdown, type WorkItem } from './work.ts';
+import { breakdownWarnings, waves, type Breakdown, type WorkItem } from './work.ts';
 
 export type ItemAction = 'created' | 'adopted' | 'existing' | 'would-create' | 'would-adopt';
 export type FilingReport = {
@@ -43,9 +43,7 @@ export async function fileBreakdown(opts: FilingOptions): Promise<FilingReport> 
   }
   const project = (epic.fields.project as { key: string }).key;
   const children = await jira.epicIssues(epicKey);
-  const report: FilingReport = { epic: epicKey, items: [], links: [], warnings: [] };
-  const cyclic = cyclicItems(breakdown.items);
-  if (cyclic.length) report.warnings.push(`Dependency cycle (check the plan's dependencies); filed in a final wave: ${cyclic.join(', ')}`);
+  const report: FilingReport = { epic: epicKey, items: [], links: [], warnings: breakdownWarnings(breakdown.items) };
   const keyOf = new Map<string, string>();
 
   const ordered = waves(breakdown.items);
@@ -105,7 +103,7 @@ export async function fileBreakdown(opts: FilingOptions): Promise<FilingReport> 
     if (dryRun) return { action: 'would-create' };
     const created = await jira.createIssue({
       project,
-      issueType: opts.issueType ?? 'Story',
+      issueType: item.issueType ?? opts.issueType ?? 'Story', // a spec ticket can say "Type: Task" (chores)
       summary: item.title,
       description: storyDescription(item, wave, breakdown),
       labels: ['sdlc', label],

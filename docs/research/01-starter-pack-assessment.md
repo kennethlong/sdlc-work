@@ -84,6 +84,8 @@ and nothing that measures whether the skills work.
 - **PIV-sized tickets** (one plan of 500–700 lines, vertical slice, wave-parallel graph) with idempotent
   Jira filing.
 - **Context-rich plan template** with file:line `PATTERN` references and a `VALIDATE` command per task.
-- **"Every bug becomes a rule + regression test + repo sweep"** (rca → system-review).
+- **The bug-to-rule loop:** `rca` proposes "a rule + regression test so the class can't recur", and
+  `system-review` tightens rules and context from plan-vs-actual. (The "repo sweep" for other occurrences is our
+  addition in `/sdlc:rca` and `/sdlc:fix`, not the reference's.)
 - **"Pre = gate, post = log"** hook mental model and fail-open hooks.
 - Two-session PM flow (draft the PRD, then slice in a fresh session).

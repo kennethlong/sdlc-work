@@ -18,6 +18,6 @@ CLI: `node "${CLAUDE_PLUGIN_ROOT}/bin/sdlc-atl.mjs"` (or `sdlc-atl` on PATH in o
    - commit, one finding (or one tight group) per commit, with the Jira key in the message.
 4. **Validate** with the full gate (`/sdlc:validate`).
 5. If a finding reveals a *pattern* the agent keeps getting wrong, propose a rule for AGENTS.md (the
-   reference's learning loop).
+   reference's learning loop), cited and in the section `/sdlc:create-rules` defines.
 6. **Push, then re-review**: `git push`, then `/sdlc:review` again. It rewrites the review file for the new HEAD, and
    publishing updates the same PR comment and annotations. Report what was fixed, what was deferred and why.

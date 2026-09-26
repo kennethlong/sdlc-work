@@ -63,7 +63,7 @@ The change and why it addresses the cause (not just the symptom). Alternatives c
 ## Prevention
 - **Regression test:** the test that fails today and passes after the fix (name and location)
 - **Rule:** the instruction to add to AGENTS.md (shared by every agent) or a context doc so agents avoid this pattern
-  (write "none: one-off" only if it truly is)
+  (write "none: one-off" only if it truly is); say which section, in the shape `/sdlc:create-rules` defines
 - **Sweep:** other occurrences to fix now or ticket
 ```
 

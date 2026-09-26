@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 // @ts-expect-error plain JS module (the wizard must run on old Node versions)
 import { isCloud, mask, mergeEnv, networkReason, normaliseUrl, parseEnv, portSkill, probe } from '../../../scripts/setup/lib.mjs';
@@ -55,7 +55,9 @@ describe('setup wizard: porting skills to other agents', () => {
   });
 
   it('leaves no Claude-only syntax in any skill', () => {
-    for (const n of ['execute', 'fix', 'plan', 'pr', 'prd', 'prime', 'rca', 'report', 'review', 'review-fix', 'setup', 'spec', 'sync', 'ticket', 'validate']) {
+    const all = readdirSync(`${repo}/plugins/sdlc/skills`, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+    expect(all.length).toBeGreaterThanOrEqual(16);
+    for (const n of all) {
       expect(portSkill(skill(n), n), n).not.toMatch(/\$\d|\$ARGUMENTS|CLAUDE_PLUGIN_ROOT|\/sdlc:[a-z]/);
     }
   });

@@ -36,11 +36,13 @@ user's agreement before planning; the brief says so when there are none.
   criteria and context.
 - **piv**: `/sdlc:prime $1` → `/sdlc:plan $1` → `/sdlc:execute` → `/sdlc:validate` → `/sdlc:report`.
   Artifact names start with the lower-cased key (`.claude/plans/<key>-<slug>.md`), which is how progress is
-  linked back.
+  linked back. After planning, summarise the plan and get the user's go-ahead before executing, unless they
+  asked for a hands-off run.
 
 ## 4. Report back
 
-Commit the work and the planning artifacts with the key in the message (e.g. `feat(SDLC-12): export button`).
+Commit the work and the planning artifacts with `/sdlc:commit` (key in the message, e.g.
+`feat(SDLC-12): export button`).
 With the hook installed, the Jira issue moves to In Progress when planned and to Done when verified, and the
 verification report is published to Confluence. Without the hook, run `/sdlc:sync`.
 

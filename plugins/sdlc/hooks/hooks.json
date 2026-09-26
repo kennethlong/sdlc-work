@@ -1,0 +1,16 @@
+{
+  "description": "sdlc baseline safety: block reading secrets and broad destructive commands; audit tool calls to .sdlc/audit.jsonl. Read by Claude Code and GitHub Copilot CLI (no matcher: the script filters tool names, which differ between the two).",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-use.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

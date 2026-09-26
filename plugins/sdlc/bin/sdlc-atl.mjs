@@ -25183,7 +25183,7 @@ function ensureRulesFiles(root2, opts = {}) {
     out2.push({ file: "AGENTS.md", action: "advice", note: 'Rules live in CLAUDE.md: move the ones every agent needs into AGENTS.md, keep Claude-only notes in CLAUDE.md, and add the line "@AGENTS.md" to CLAUDE.md.' });
   else {
     if (!opts.dryRun) writeFileSync2(agents, AGENTS_STUB);
-    out2.push({ file: "AGENTS.md", action: "created", note: "fill in the commands and conventions (or run /sdlc:create-rules when it exists)" });
+    out2.push({ file: "AGENTS.md", action: "created", note: "a stub: run /sdlc:create-rules (sdlc-create-rules in other agents) to derive the rules from the codebase" });
   }
   const agentsExists = opts.dryRun ? out2[0].action !== "advice" : existsSync2(agents);
   if (claudeText === void 0) {
@@ -27258,6 +27258,30 @@ function cyclicItems(items) {
     return items.filter((i) => !ordered.has(i.id)).map((i) => i.id);
   }
 }
+function fileOverlaps(items) {
+  const norm2 = (f) => f.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "").toLowerCase();
+  const touches = (a, b) => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+  const out2 = [];
+  for (const [n, wave] of waves(items).entries()) {
+    for (let i = 0; i < wave.length; i++) {
+      for (let j2 = i + 1; j2 < wave.length; j2++) {
+        const a = wave[i], b = wave[j2];
+        const shared = (a.files ?? []).filter((fa) => (b.files ?? []).some((fb) => touches(norm2(fa), norm2(fb))));
+        if (shared.length) {
+          out2.push(`Wave ${n + 1}: ${a.id} and ${b.id} both touch ${shared.join(", ")}; make one depend on the other or split the shared change out`);
+        }
+      }
+    }
+  }
+  return out2;
+}
+function breakdownWarnings(items) {
+  const cyclic = cyclicItems(items);
+  return [
+    ...cyclic.length ? [`Dependency cycle (check the plan's dependencies); filed in a final wave: ${cyclic.join(", ")}`] : [],
+    ...fileOverlaps(items)
+  ];
+}
 
 // packages/atlassian/src/engines/index.ts
 import { existsSync as existsSync6, readFileSync as readFileSync6 } from "node:fs";
@@ -27476,7 +27500,9 @@ var PivEngine = class {
         dependsOn: t.dependsOn,
         status: statusOf2(!!plan, verification),
         source: `${specRel.split("\\").join("/")} (${t.id})`,
-        verification
+        verification,
+        files: t.files,
+        ...t.issueType ? { issueType: t.issueType } : {}
       };
     });
     return { engine: "piv", title: spec.title, overview: spec.summary, items };
@@ -27560,6 +27586,8 @@ function parseTicketBody(body) {
   const lines = body.split("\n");
   let goal = "";
   let dependsOn = [];
+  let files = [];
+  let issueType;
   const criteria = [];
   let inCriteria = false;
   for (const raw of lines) {
@@ -27582,12 +27610,18 @@ function parseTicketBody(body) {
     } else if (m = item.match(/^acceptance criteria:?\s*(.*)$/i)) {
       if (m[1]) criteria.push(m[1].trim());
       inCriteria = true;
-    } else if (/^files touched/i.test(item)) {
+    } else if (m = item.match(/^files touched[^:]*:?\s*(.*)$/i)) {
+      files = parseFiles(m[1]);
+    } else if (m = item.match(/^(?:issue )?type:\s*([A-Za-z][\w-]*(?: [A-Za-z][\w-]*)?)\s*$/i)) {
+      issueType = m[1].trim();
     } else {
       criteria.push(item.replace(/^\[[ xX]\]\s+/, ""));
     }
   }
-  return { goal, acceptanceCriteria: criteria, dependsOn };
+  return { goal, acceptanceCriteria: criteria, dependsOn, files, ...issueType ? { issueType } : {} };
+}
+function parseFiles(text) {
+  return text.replace(/\([^)]*\)/g, " ").split(/[,;]|\s+and\s+/).map((f) => f.replace(/[`*]/g, "").trim()).filter((f) => f && /[./\\]/.test(f) && !/\s/.test(f));
 }
 function escapeRe(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -27642,9 +27676,7 @@ async function fileBreakdown(opts) {
   }
   const project = epic.fields.project.key;
   const children = await jira.epicIssues(epicKey);
-  const report = { epic: epicKey, items: [], links: [], warnings: [] };
-  const cyclic = cyclicItems(breakdown.items);
-  if (cyclic.length) report.warnings.push(`Dependency cycle (check the plan's dependencies); filed in a final wave: ${cyclic.join(", ")}`);
+  const report = { epic: epicKey, items: [], links: [], warnings: breakdownWarnings(breakdown.items) };
   const keyOf = /* @__PURE__ */ new Map();
   const ordered = waves(breakdown.items);
   for (const [w, wave] of ordered.entries()) {
@@ -27694,7 +27726,8 @@ async function fileBreakdown(opts) {
     if (dryRun) return { action: "would-create" };
     const created = await jira.createIssue({
       project,
-      issueType: opts.issueType ?? "Story",
+      issueType: item.issueType ?? opts.issueType ?? "Story",
+      // a spec ticket can say "Type: Task" (chores)
       summary: item.title,
       description: storyDescription(item, wave, breakdown),
       labels: ["sdlc", label],
@@ -28370,6 +28403,28 @@ function ghCliToken(host) {
 var import_yaml = __toESM(require_dist(), 1);
 import { readFileSync as readFileSync9 } from "node:fs";
 var REVIEW_MARKER = "<!-- sdlc-review -->";
+var CATEGORIES = ["bug", "security", "performance", "quality", "tests", "standards"];
+var CATEGORY_ALIASES = {
+  logic: "bug",
+  correctness: "bug",
+  bugs: "bug",
+  vulnerability: "security",
+  perf: "performance",
+  "code quality": "quality",
+  "code-quality": "quality",
+  maintainability: "quality",
+  readability: "quality",
+  test: "tests",
+  testing: "tests",
+  standard: "standards",
+  conventions: "standards",
+  style: "standards"
+};
+function normaliseCategory(c) {
+  if (c === void 0 || c === null || c === "") return void 0;
+  const k2 = String(c).trim().toLowerCase();
+  return CATEGORY_ALIASES[k2] ?? k2;
+}
 var SEVERITIES = ["critical", "high", "medium", "low"];
 var isBlocking = (f) => f.severity === "critical" || f.severity === "high";
 function readReview(path) {
@@ -28382,12 +28437,52 @@ function readReview(path) {
     const severity = String(f.severity ?? "").toLowerCase();
     if (!SEVERITIES.includes(severity)) throw new Error(`${path}: finding ${i + 1} has severity "${f.severity}" (expected ${SEVERITIES.join("|")})`);
     if (!f.file || !f.title) throw new Error(`${path}: finding ${i + 1} needs file and title`);
-    return { ...f, severity, file: String(f.file).replace(/\\/g, "/"), line: f.line ? Number(f.line) : void 0, title: String(f.title) };
+    const category = normaliseCategory(f.category);
+    return { ...f, severity, ...category ? { category } : { category: void 0 }, file: String(f.file).replace(/\\/g, "/"), line: f.line ? Number(f.line) : void 0, title: String(f.title) };
   });
   const verdict = meta.verdict ?? (findings.some(isBlocking) ? "changes_requested" : findings.length ? "comments" : "approved");
   if (!["approved", "comments", "changes_requested"].includes(verdict)) throw new Error(`${path}: verdict "${meta.verdict}" is not approved|comments|changes_requested`);
   findings.sort((a, b) => SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity));
-  return { base: meta.base, head: meta.head, verdict, findings, summary: text.slice(m[0].length).trim(), path };
+  const stats = readStats(meta.stats);
+  return { base: meta.base, head: meta.head, verdict, findings, summary: text.slice(m[0].length).trim(), path, ...stats ? { stats } : {} };
+}
+function readStats(raw) {
+  if (!raw || typeof raw !== "object") return void 0;
+  const num = (...keys) => {
+    for (const k2 of keys) if (raw[k2] !== void 0 && raw[k2] !== null && !Number.isNaN(Number(raw[k2]))) return Number(raw[k2]);
+    return void 0;
+  };
+  const stats = {
+    filesAdded: num("files_added", "filesAdded"),
+    filesModified: num("files_modified", "filesModified"),
+    filesDeleted: num("files_deleted", "filesDeleted"),
+    linesAdded: num("lines_added", "linesAdded", "insertions"),
+    linesDeleted: num("lines_deleted", "linesDeleted", "deletions")
+  };
+  return Object.values(stats).some((v) => v !== void 0) ? stats : void 0;
+}
+function categoryCounts(findings) {
+  const m = /* @__PURE__ */ new Map();
+  for (const f of findings) {
+    const c = f.category ?? "uncategorised";
+    m.set(c, (m.get(c) ?? 0) + 1);
+  }
+  const known = CATEGORIES;
+  const order = (c) => c === "uncategorised" ? 99 : known.includes(c) ? known.indexOf(c) : 50;
+  return [...m.entries()].sort((a, b) => order(a[0]) - order(b[0]) || a[0].localeCompare(b[0]));
+}
+function categoryLine(findings) {
+  return categoryCounts(findings).map(([c, n]) => `${c} ${n}`).join(" \xB7 ");
+}
+function statsLine(s) {
+  if (!s) return void 0;
+  const files = [s.filesAdded && `${s.filesAdded} added`, s.filesModified && `${s.filesModified} modified`, s.filesDeleted && `${s.filesDeleted} deleted`].filter(Boolean);
+  const total = (s.filesAdded ?? 0) + (s.filesModified ?? 0) + (s.filesDeleted ?? 0);
+  const parts = [
+    total ? `${total} file${total === 1 ? "" : "s"}${files.length ? ` (${files.join(", ")})` : ""}` : void 0,
+    s.linesAdded !== void 0 || s.linesDeleted !== void 0 ? `+${s.linesAdded ?? 0} \u2212${s.linesDeleted ?? 0} lines` : void 0
+  ].filter(Boolean);
+  return parts.length ? parts.join(" \xB7 ") : void 0;
 }
 function counts(findings) {
   return Object.fromEntries(SEVERITIES.map((s) => [s, findings.filter((f) => f.severity === s).length]));
@@ -28400,11 +28495,14 @@ function countLine(findings) {
 }
 function renderPrComment(review, host, ref) {
   const lines = [`## ${ICON[review.verdict]} Code review: ${LABEL[review.verdict]}`, "", `**${countLine(review.findings)}**${review.base ? ` \xB7 compared with \`${review.base}\`` : ""} \xB7 commit \`${ref.slice(0, 10)}\``, ""];
+  const stats = statsLine(review.stats);
+  if (stats) lines.push(`**Changes:** ${stats}`, "");
   if (review.findings.length) {
-    lines.push("| # | Severity | Location | Finding |", "|---|---|---|---|");
+    lines.push(`**By category:** ${categoryLine(review.findings)}`, "");
+    lines.push("| # | Severity | Category | Location | Finding |", "|---|---|---|---|---|");
     review.findings.forEach((f, i) => {
       const loc = `[${f.file}${f.line ? `:${f.line}` : ""}](${host.fileUrl(f.file, f.line, ref)})`;
-      lines.push(`| ${i + 1} | ${f.severity} | ${loc} | ${f.title.replace(/\|/g, "\\|")} |`);
+      lines.push(`| ${i + 1} | ${f.severity} | ${f.category ?? ""} | ${loc} | ${f.title.replace(/\|/g, "\\|")} |`);
     });
     lines.push("");
     review.findings.forEach((f, i) => {
@@ -28420,8 +28518,12 @@ function renderPrComment(review, host, ref) {
 }
 function renderJiraComment(review, prUrl) {
   const top = review.findings.filter(isBlocking).slice(0, 5);
+  const stats = statsLine(review.stats);
   return [
     `Code review ${ICON[review.verdict]} **${LABEL[review.verdict]}** (${countLine(review.findings)}) on [the pull request](${prUrl}).`,
+    ...review.findings.length || stats ? [""] : [],
+    ...review.findings.length ? [`By category: ${categoryLine(review.findings)}`] : [],
+    ...stats ? [`Changes: ${stats}`] : [],
     ...top.length ? ["", ...top.map((f) => `- ${f.severity}: ${f.title} (\`${f.file}${f.line ? `:${f.line}` : ""}\`)`)] : []
   ].join("\n");
 }
@@ -28636,7 +28738,7 @@ try {
         () => [
           `${b.title} (${b.engine}, ${b.items.length} items)`,
           ...waves(b.items).map((w, n) => `  Wave ${n + 1}: ${w.map((i) => `[${i.id}] ${i.title} (${i.status})`).join(" | ")}`),
-          ...cyclicItems(b.items).map((id) => `  warning: ${id} is in a dependency cycle (placed in the last wave)`)
+          ...breakdownWarnings(b.items).map((w) => `  warning: ${w}`)
         ].join("\n")
       );
       break;
@@ -28698,7 +28800,14 @@ try {
       break;
     }
     case "review-scope": {
-      const s = reviewScope(root, opt.base ?? cfg.git?.base);
+      const s = reviewScope(root, opt.base ?? cfg.git?.base, opt.branch);
+      let jira;
+      try {
+        jira = clients().jira;
+      } catch {
+        jira = void 0;
+      }
+      s.key = await resolveKey({ texts: [s.branch, ...s.commits], projects: cfg.jira?.projects, jira });
       out(s, () => JSON.stringify(s, null, 2));
       break;
     }

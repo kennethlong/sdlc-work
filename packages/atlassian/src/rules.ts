@@ -49,7 +49,7 @@ export function ensureRulesFiles(root: string, opts: { dryRun?: boolean } = {}):
     out.push({ file: 'AGENTS.md', action: 'advice', note: 'Rules live in CLAUDE.md: move the ones every agent needs into AGENTS.md, keep Claude-only notes in CLAUDE.md, and add the line "@AGENTS.md" to CLAUDE.md.' });
   else {
     if (!opts.dryRun) writeFileSync(agents, AGENTS_STUB);
-    out.push({ file: 'AGENTS.md', action: 'created', note: 'fill in the commands and conventions (or run /sdlc:create-rules when it exists)' });
+    out.push({ file: 'AGENTS.md', action: 'created', note: 'a stub: run /sdlc:create-rules (sdlc-create-rules in other agents) to derive the rules from the codebase' });
   }
 
   const agentsExists = opts.dryRun ? out[0]!.action !== 'advice' : existsSync(agents);

@@ -11,7 +11,8 @@ argument-hint: "<path to plan>"
 2. **Do the steps in order.** For each one: make the change, following the cited pattern; run its **Check**
    command; fix the problem before moving on if it fails.
 3. **Write the tests** the plan lists, including the edge and error cases.
-4. **Run the full validation gate** from the plan (or `/sdlc:validate`). Everything must pass.
+4. **Run the full validation gate** from the plan (or `/sdlc:validate`): all six levels, including the manual
+   steps and, for user-facing changes, the browser flows (`/sdlc:e2e`). Everything that runs must pass.
 
 ## When reality differs from the plan
 

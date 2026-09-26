@@ -38,6 +38,14 @@ Then `/sdlc:setup` (credentials in `~/.sdlc/atlassian.env`, engine, git hook).
 | `review-fix` | both | fix findings most-severe first, each with a test; re-review |
 | `pr` | both | open/update the PR (GitHub or Bitbucket DC) titled from Jira, linked from Jira |
 | `prime`, `plan`, `execute`, `validate`, `report` | piv engine | the reference-style loop; artifacts named `<ticket>-<slug>.md` so progress links to Jira |
+| `e2e` | both | browser check of user-facing flows (Playwright MCP first); ✓/✗ lines for the report |
+| `commit` | both | one key-tagged conventional commit, secret check, "AI Layer Changes" note |
+| `system-review` | both | plan vs actual: good/bad divergences, root cause, alignment score, proposed AGENTS.md and skill text |
+| `create-rules` | both | derive `AGENTS.md` (rules cited to `file:line`, context table, gotchas) from the codebase |
+
+The plugin also ships a `system-reviewer` agent and a safety hook (`hooks/`): it blocks secret reads and broad
+destructive commands for Bash and PowerShell, and logs tool calls to `.sdlc/audit.jsonl` (`SDLC_GUARD=off`,
+`SDLC_AUDIT=off` to relax). Evals for the skills live in `evals/` (`claude plugin eval . --allow-tools Write`).
 
 With GSD as the engine, GSD's own commands do the planning and execution (`/gsd-*`); these skills handle the
 Jira/Confluence side and the tracks.

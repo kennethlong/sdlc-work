@@ -31,6 +31,10 @@ export type WorkItem = {
   source: string;
   /** Latest verification report, if the item has been verified (pass or fail). */
   verification?: Verification;
+  /** Files the item is expected to touch (spec "Files touched"), for the parallel-work overlap check. */
+  files?: string[];
+  /** Jira issue type for this item (spec "Type:" line, e.g. Task for chores); default Story. */
+  issueType?: string;
 };
 
 export type Breakdown = {
@@ -94,4 +98,35 @@ export function cyclicItems(items: WorkItem[]): string[] {
     const ordered = new Set(waves(items).slice(0, -1).flat().map((i) => i.id));
     return items.filter((i) => !ordered.has(i.id)).map((i) => i.id);
   }
+}
+
+/**
+ * Items in the same wave run in parallel (separate worktrees or developers); if they expect to touch the same
+ * file they will conflict. One warning per overlapping pair. Paths match exactly or as a directory prefix.
+ */
+export function fileOverlaps(items: WorkItem[]): string[] {
+  const norm = (f: string) => f.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '').toLowerCase();
+  const touches = (a: string, b: string) => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+  const out: string[] = [];
+  for (const [n, wave] of waves(items).entries()) {
+    for (let i = 0; i < wave.length; i++) {
+      for (let j = i + 1; j < wave.length; j++) {
+        const a = wave[i]!, b = wave[j]!;
+        const shared = (a.files ?? []).filter((fa) => (b.files ?? []).some((fb) => touches(norm(fa), norm(fb))));
+        if (shared.length) {
+          out.push(`Wave ${n + 1}: ${a.id} and ${b.id} both touch ${shared.join(', ')}; make one depend on the other or split the shared change out`);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/** Everything worth warning about before filing: dependency cycles and file overlaps within a wave. */
+export function breakdownWarnings(items: WorkItem[]): string[] {
+  const cyclic = cyclicItems(items);
+  return [
+    ...(cyclic.length ? [`Dependency cycle (check the plan's dependencies); filed in a final wave: ${cyclic.join(', ')}`] : []),
+    ...fileOverlaps(items),
+  ];
 }

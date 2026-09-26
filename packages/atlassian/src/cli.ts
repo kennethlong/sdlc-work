@@ -37,8 +37,8 @@ import { syncProgress, type SyncEntry, type SyncReport } from './sync.ts';
 import { escalateTicket, importTicket, publishRca } from './tickets.ts';
 import { reviewScope } from './git.ts';
 import { resolveHost } from './hosts/index.ts';
-import { openPr, publishReview } from './pr.ts';
-import { cyclicItems, waves } from './work.ts';
+import { openPr, publishReview, resolveKey } from './pr.ts';
+import { breakdownWarnings, waves } from './work.ts';
 
 const USAGE = `sdlc-atl: Jira/Confluence/PR steps for the sdlc skills.
 
@@ -125,7 +125,7 @@ try {
         [
           `${b.title} (${b.engine}, ${b.items.length} items)`,
           ...waves(b.items).map((w, n) => `  Wave ${n + 1}: ${w.map((i) => `[${i.id}] ${i.title} (${i.status})`).join(' | ')}`),
-          ...cyclicItems(b.items).map((id) => `  warning: ${id} is in a dependency cycle (placed in the last wave)`),
+          ...breakdownWarnings(b.items).map((w) => `  warning: ${w}`),
         ].join('\n'),
       );
       break;
@@ -192,7 +192,15 @@ try {
     }
 
     case 'review-scope': {
-      const s = reviewScope(root, opt.base ?? cfg.git?.base);
+      const s = reviewScope(root, opt.base ?? cfg.git?.base, opt.branch);
+      // A validated key (configured projects, else a Jira lookup), not just the first look-alike in the branch name.
+      let jira;
+      try {
+        jira = clients().jira;
+      } catch {
+        jira = undefined;
+      }
+      s.key = await resolveKey({ texts: [s.branch, ...s.commits], projects: cfg.jira?.projects, jira });
       out(s, () => JSON.stringify(s, null, 2));
       break;
     }

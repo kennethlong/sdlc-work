@@ -28,7 +28,8 @@ CLI: `node "${CLAUDE_PLUGIN_ROOT}/bin/sdlc-atl.mjs"` (or `sdlc-atl` on PATH in o
 2. **Fix** the root cause as the RCA describes (not a guard that hides the symptom). Keep the change minimal;
    match the surrounding code.
 3. **Rule**: add the prevention rule to AGENTS.md (every agent reads it; CLAUDE.md imports it) or the relevant context doc, short and specific,
-   with a pointer to the RCA. Skip only if the RCA says "none: one-off".
+   with a pointer to the RCA, in the section `/sdlc:create-rules` defines for it (Hard rules, Gotchas, or a
+   `.claude/context/` module). Skip only if the RCA says "none: one-off".
 4. **Sweep**: fix the other occurrences the RCA lists, or file follow-up tickets for them.
 
 ## 4. Validate

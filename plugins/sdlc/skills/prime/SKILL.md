@@ -1,7 +1,7 @@
 ---
 name: prime
-description: Load the context for a piece of work - the Jira ticket (or spec ticket) plus the parts of the codebase it touches - and summarise it. First step of the PIV loop (prime -> plan -> execute -> validate -> report). Use at the start of a session on a ticket.
-argument-hint: "[jira-key or TICKET-n]"
+description: Load the context for a piece of work - one or more Jira tickets (or spec tickets) and any Confluence pages (specs, designs) - plus the parts of the codebase it touches, and summarise it. First step of the PIV loop (prime -> plan -> execute -> validate -> report). Use at the start of a session on a ticket.
+argument-hint: "[jira-keys, TICKET-n and/or Confluence page ids or URLs, space or comma separated]"
 ---
 
 # Prime: understand the task and the terrain
@@ -10,9 +10,19 @@ CLI: `node "${CLAUDE_PLUGIN_ROOT}/bin/sdlc-atl.mjs"` (or `sdlc-atl` on PATH in o
 
 ## 1. The task
 
-- A Jira key: `sdlc-atl import $1` (if `.sdlc/tickets/$1.md` doesn't exist yet), then read the brief.
-- A spec ticket (`TICKET-n`): read its section in `docs/specs/*.md`, and the PRD in `docs/prd/` if present.
+The arguments (`$ARGUMENTS`) may name several things, separated by spaces or commas. Load each one before
+looking at code, so the codebase reading is anchored to the actual work:
+
+- **Jira keys** (`PROJ-12`): `sdlc-atl import <KEY>` for each key whose `.sdlc/tickets/<KEY>.md` doesn't exist yet,
+  then read every brief. The first key is the one being worked; the others are related context (a parent,
+  a dependency, a linked bug).
+- **Spec tickets** (`TICKET-n`): read the section in `docs/specs/*.md`, and the PRD in `docs/prd/` if present.
+- **Confluence pages** (a numeric page id, or a page URL: take the id from `pageId=<id>` or `/pages/<id>/`):
+  `sdlc-atl page pull <id> --out .sdlc/context/page-<id>.md` (per-developer: keep `.sdlc/context/` out of git),
+  then read it. Treat pages as supporting context (specs, designs, decisions), not as the task itself.
 - Nothing given: ask what to work on.
+
+Start the summary with one line per item loaded, so it is clear what the work is anchored to.
 
 ## 2. The codebase, scoped to the task
 

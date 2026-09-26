@@ -10,7 +10,7 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import {
-  AGENTS, MCP_NAME, MIN_NODE, PREREQS, isCloud, mask, mergeEnv, networkReason, nodeMajor, normaliseUrl, parseEnv, portSkill, probe, tokenHelp,
+  AGENTS, MCP_NAME, MIN_NODE, PREREQS, isCloud, mask, mergeEnv, networkReason, nodeMajor, normaliseUrl, parseEnv, portSkill, portText, probe, tokenHelp,
 } from './lib.mjs';
 
 const MCP_ATLASSIAN_VERSION = '0.23.1'; // keep in step with scripts/mcp-atlassian.mjs
@@ -244,12 +244,33 @@ function installCli() {
 
 const skillNames = () => readdirSync(join(plugin, 'skills'), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
 
+/** Every file a skill ships (SKILL.md plus templates beside it), with SKILL.md ported for other agents. */
+function skillFiles(n) {
+  const src = join(plugin, 'skills', n);
+  const out = [];
+  const walk = (rel) => {
+    for (const e of readdirSync(join(src, rel), { withFileTypes: true })) {
+      const r = rel ? join(rel, e.name) : e.name;
+      if (e.isDirectory()) walk(r);
+      else {
+        const text = readFileSync(join(src, r), 'utf8');
+        out.push({ rel: r, text: r === 'SKILL.md' ? portSkill(text, n) : r.endsWith('.md') ? portText(text) : text });
+      }
+    }
+  };
+  walk('');
+  return out;
+}
+
 function installSkills() {
   for (const dir of skillDirs) {
     for (const n of skillNames()) {
       const target = join(dir, `sdlc-${n}`);
-      mkdirSync(target, { recursive: true });
-      writeFileSync(join(target, 'SKILL.md'), portSkill(readFileSync(join(plugin, 'skills', n, 'SKILL.md'), 'utf8'), n));
+      rmSync(target, { recursive: true, force: true }); // drop files a skill no longer ships
+      for (const f of skillFiles(n)) {
+        mkdirSync(dirname(join(target, f.rel)), { recursive: true });
+        writeFileSync(join(target, f.rel), f.text);
+      }
     }
     ok(`${skillNames().length} skills -> ${dir} (as sdlc-<name>)`);
     record('ok', 'skills', dir);
@@ -258,10 +279,7 @@ function installSkills() {
 
 function skillsCurrent() {
   return skillDirs.every((dir) =>
-    skillNames().every((n) => {
-      const f = join(dir, `sdlc-${n}`, 'SKILL.md');
-      return existsSync(f) && readFileSync(f, 'utf8') === portSkill(readFileSync(join(plugin, 'skills', n, 'SKILL.md'), 'utf8'), n);
-    }),
+    skillNames().every((n) => skillFiles(n).every((f) => existsSync(join(dir, `sdlc-${n}`, f.rel)) && readFileSync(join(dir, `sdlc-${n}`, f.rel), 'utf8') === f.text)),
   );
 }
 
@@ -293,7 +311,9 @@ const REGISTER = {
       const listed = run('claude', ['plugin', 'marketplace', 'list']).out.includes('sdlc-work');
       const m = listed ? run('claude', ['plugin', 'marketplace', 'update', 'sdlc-work']) : run('claude', ['plugin', 'marketplace', 'add', repo]);
       if (!m.ok) return m;
-      return run('claude', ['plugin', 'install', 'sdlc@sdlc-work']);
+      // install is a no-op when already installed; update picks up a new version from the marketplace.
+      const installed = run('claude', ['plugin', 'list']).out.includes('sdlc@sdlc-work');
+      return installed ? run('claude', ['plugin', 'update', 'sdlc@sdlc-work']) : run('claude', ['plugin', 'install', 'sdlc@sdlc-work']);
     },
     present: () => run('claude', ['plugin', 'list']).out.includes('sdlc@sdlc-work'),
     remove: () => run('claude', ['plugin', 'uninstall', 'sdlc@sdlc-work']),
