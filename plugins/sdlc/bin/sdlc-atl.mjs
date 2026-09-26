@@ -28555,7 +28555,35 @@ function connect(opts) {
 }
 
 // packages/atlassian/src/cli.ts
-var [command, ...rest] = process.argv.slice(2);
+var USAGE = `sdlc-atl: Jira/Confluence/PR steps for the sdlc skills.
+
+Track A (PRD -> epic -> stories)
+  breakdown                                    show the work breakdown the engine sees
+  file-breakdown --epic KEY [--prd PAGE_ID]    file it as stories under the epic + a breakdown page
+Track B (one ticket)
+  import KEY                                   write the ticket brief .sdlc/tickets/KEY.md
+  publish-rca KEY [--file docs/rca/KEY.md]     publish a bug's RCA to Confluence and the bug
+  escalate KEY --epic EPIC                     promote a ticket to Track A
+Review and PR (GitHub or Bitbucket Data Center, from the origin remote)
+  review-scope [--base B]                      what a review covers (base...HEAD), as JSON
+  pr [--base B] [--draft] [--title T] [--branch B] [--dry-run]    open or update the PR, link Jira
+  publish-review FILE [--gate] [--branch B] [--pr ID]             post a review to the PR (+ annotations, Jira)
+Both
+  sync [--quiet] [--dry-run]                   move issues forward, publish verification reports
+  page pull PAGE_ID [--out FILE]               Confluence page -> markdown
+  page push FILE --space KEY [--title T] [--parent ID]            markdown -> Confluence page
+  hooks install|uninstall|status               git post-commit hook that runs sync automatically
+  init [--engine gsd|piv] [--epic KEY] [--prd ID] [--space KEY]   .sdlc/config.json + AGENTS.md/CLAUDE.md
+  whoami                                       check the Jira and Confluence connection
+
+Common options: --root DIR, --engine gsd|piv, --dry-run, --json, --env FILE, --space KEY
+Credentials: ~/.sdlc/atlassian.env (set up with \`node setup.mjs\` in the sdlc-work clone).`;
+var argv = process.argv.slice(2);
+if (!argv.length || argv[0] === "help" || argv.includes("--help") || argv.includes("-h")) {
+  console.log(USAGE);
+  process.exit(0);
+}
+var [command, ...rest] = argv;
 var { values: opt, positionals } = parseArgs({
   args: rest,
   allowPositionals: true,
@@ -28813,7 +28841,9 @@ ${JSON.stringify(merged, null, 2)}`);
       break;
     }
     default:
-      console.error("usage: sdlc-atl <breakdown | file-breakdown | import | publish-rca | escalate | review-scope | pr | publish-review | sync | page | hooks | init | whoami> [options]  (see the header of src/cli.ts)");
+      console.error(`Unknown command: ${command}
+
+${USAGE}`);
       process.exit(command ? 1 : 0);
   }
 } catch (e) {

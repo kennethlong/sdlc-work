@@ -14,12 +14,11 @@ claude plugin install sdlc@sdlc-work
 
 Skills are then `/sdlc:<name>`.
 
-**Other agents** (GitHub Copilot CLI, Codex, Gemini CLI, Cursor, …): from the sdlc-work repo run
-`scripts/install.ps1`. It puts `sdlc-atl` on PATH and copies the skills to `~/.agents/skills` as `sdlc-<name>`
-(`-SkillDirs` for other locations).
-
-**GitHub Copilot CLI** reads `~/.agents/skills`, so the skills appear as `sdlc-<name>`; `install.ps1` also
-registers the Jira/Confluence MCP server with it as `sdlc-atlassian` (`copilot mcp list`; `-NoCopilot` to skip).
+**Other agents** (GitHub Copilot CLI, Copilot in VS Code, Codex, …): from the sdlc-work clone run
+`node setup.mjs` (see [docs/getting-started.md](../../docs/getting-started.md)). It puts `sdlc-atl` on PATH,
+copies the skills to `~/.agents/skills` as `sdlc-<name>` (Copilot CLI, VS Code and Codex all read that folder;
+`$1`/`$ARGUMENTS` become named placeholders), and registers the Jira/Confluence MCP server `sdlc-atlassian` with
+each tool (`copilot mcp add`, `code --add-mcp`, `codex mcp add`). `scripts/install.ps1` runs it without questions.
 Copilot CLI can also load this plugin unchanged: `copilot --plugin-dir <sdlc-work>/plugins/sdlc`.
 
 Then `/sdlc:setup` (credentials in `~/.sdlc/atlassian.env`, engine, git hook).

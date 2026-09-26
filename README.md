@@ -9,15 +9,16 @@ lifecycle, built on Claude Code and portable Agent Skills. It started from
 ## Quick start
 
 ```powershell
-# Claude Code
-claude plugin marketplace add C:\Code\sdlc-work
-claude plugin install sdlc@sdlc-work
-# other agents (GitHub Copilot CLI, Codex, Gemini CLI, ...): CLI on PATH + skills in ~/.agents/skills,
-# and the Jira/Confluence MCP server registered with Copilot CLI when it is installed
-./scripts/install.ps1
+git clone https://github.com/kennethlong/sdlc-work.git
+cd sdlc-work
+node setup.mjs          # the getting-started wizard (safe to re-run; --check only reports)
 ```
 
-Then run `/sdlc:setup` in a repo. See [plugins/sdlc/README.md](plugins/sdlc/README.md).
+The wizard asks which AI tools you use (GitHub Copilot CLI, Copilot in VS Code, Codex, Claude Code), checks
+and installs the prerequisites (Node 22+, git, uv, gh), installs the skills and the Jira/Confluence MCP server
+for each tool (the plugin for Claude Code), and collects and tests your Jira, Confluence and Bitbucket tokens.
+Then, in a repo, run the setup skill: `/sdlc:setup` in Claude Code, or ask Copilot or Codex to "use the
+sdlc-setup skill". Details: [docs/getting-started.md](docs/getting-started.md).
 
 ## Docs
 

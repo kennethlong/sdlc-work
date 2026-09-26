@@ -38,7 +38,8 @@
       "issueKey": "SCRUM-156"
     },
     "T-9": {
-      "issueKey": "SCRUM-157"
+      "issueKey": "SCRUM-157",
+      "verificationPageId": "2556022"
     },
     "F-2": {
       "issueKey": "SCRUM-158"
@@ -137,10 +138,12 @@
       "issueKey": "SCRUM-189"
     },
     "T-11": {
-      "issueKey": "SCRUM-190"
+      "issueKey": "SCRUM-190",
+      "verificationPageId": "196978"
     },
     "T-10": {
-      "issueKey": "SCRUM-191"
+      "issueKey": "SCRUM-191",
+      "verificationPageId": "1998940"
     }
   },
   "breakdownPageId": "491549",

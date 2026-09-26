@@ -27,9 +27,9 @@ review, which has the evidence (file:line) and effort for each item. Work top to
 - [ ] **T6** [SCRUM-169](https://kennyalanlong.atlassian.net/browse/SCRUM-169) `sdlc-atl doctor`: credentials (expiry hints), git host, gsd-tools, hook path, Bug/Epic types, workflow reachability, last sync error
 - [ ] **T7** [SCRUM-170](https://kennyalanlong.atlassian.net/browse/SCRUM-170) `sdlc-atl start KEY`: import → assign to me → In Progress → `feature/KEY-slug` branch → next steps; branch creation at the start of `ticket`/`fix`/the `spec` hand-off
 - [ ] **T8** [SCRUM-156](https://kennyalanlong.atlassian.net/browse/SCRUM-156) Config discoverability: `init` flags for every key, a JSON schema, setup documents `transitions`/`doneWhen`/`issueType`/`git.base`/`spec`
-- [ ] **T9** [SCRUM-157](https://kennyalanlong.atlassian.net/browse/SCRUM-157) Cross-agent install: Node-based `install.mjs` for all operating systems; rewrite `$1`/`$ARGUMENTS` for non-Claude agents; document `uv`; the hook always uses a stable CLI path
-- [ ] **T10** [SCRUM-191](https://kennyalanlong.atlassian.net/browse/SCRUM-191) Getting-started wizard: `node setup.mjs` picks the AI tools (Copilot CLI / VS Code, Codex, Claude Code), checks and installs prerequisites, installs skills + MCP per tool, collects and live-tests tokens, detects proxy/TLS issues
-- [ ] **T11** [SCRUM-190](https://kennyalanlong.atlassian.net/browse/SCRUM-190) AGENTS.md as the single rules file: skills write rules there; `init` creates `AGENTS.md` and a `CLAUDE.md` that imports it
+- [x] **T9** [SCRUM-157](https://kennyalanlong.atlassian.net/browse/SCRUM-157) Cross-agent install: Node-based `install.mjs` for all operating systems; rewrite `$1`/`$ARGUMENTS` for non-Claude agents; document `uv`; the hook always uses a stable CLI path
+- [x] **T10** [SCRUM-191](https://kennyalanlong.atlassian.net/browse/SCRUM-191) Getting-started wizard: `node setup.mjs` picks the AI tools (Copilot CLI / VS Code, Codex, Claude Code), checks and installs prerequisites, installs skills + MCP per tool, collects and live-tests tokens, detects proxy/TLS issues
+- [x] **T11** [SCRUM-190](https://kennyalanlong.atlassian.net/browse/SCRUM-190) AGENTS.md as the single rules file: skills write rules there; `init` creates `AGENTS.md` and a `CLAUDE.md` that imports it
 
 ## 3. Restore reference strengths
 
