@@ -15,6 +15,9 @@ export type JiraIssue = {
   };
 };
 
+/** A user as Jira returns it on issues and comments: `name` on Data Center, `accountId` on Cloud. */
+export type JiraUser = { name?: string; accountId?: string; displayName?: string };
+
 export type StatusCategory = 'new' | 'indeterminate' | 'done';
 /** Workflow order of Jira's fixed status categories (To Do < In Progress < Done). */
 export const RANK: Record<StatusCategory, number> = { new: 1, indeterminate: 2, done: 3 };
@@ -252,9 +255,17 @@ export class JiraClient {
     return true;
   }
 
-  /** Add a comment; body is markdown. */
-  addComment(key: string, markdown: string) {
-    return this.http.post<{ id: string }>(`/rest/api/2/issue/${encodeURIComponent(key)}/comment`, { body: markdownToJiraWiki(markdown) });
+  /** Add a comment; body is markdown. `mention` users get a real @-mention (and so a notification) in front. */
+  addComment(key: string, markdown: string, opts: { mention?: JiraUser[] } = {}) {
+    const mentions = (opts.mention ?? []).map((u) => this.mentionMarkup(u)).filter(Boolean);
+    const body = [mentions.join(' '), markdownToJiraWiki(markdown)].filter(Boolean).join(' ');
+    return this.http.post<{ id: string }>(`/rest/api/2/issue/${encodeURIComponent(key)}/comment`, { body });
+  }
+
+  /** Wiki markup for an @-mention: `[~name]` on Data Center, `[~accountid:ID]` on Cloud ('' if the user can't be named). */
+  mentionMarkup(user: JiraUser): string {
+    if (this.flavor === 'cloud') return user.accountId ? `[~accountid:${user.accountId}]` : '';
+    return user.name ? `[~${user.name}]` : '';
   }
 
   comments(key: string) {

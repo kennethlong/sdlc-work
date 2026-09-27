@@ -18,7 +18,7 @@ import { slugify } from './engines/piv.ts';
 import type { SdlcConfig } from './engines/index.ts';
 import { defaultBase, git } from './git.ts';
 import type { GitHost } from './hosts/types.ts';
-import { JiraClient, type JiraIssue } from './jira.ts';
+import { JiraClient, type JiraIssue, type JiraUser } from './jira.ts';
 import { openPr, publishReview } from './pr.ts';
 import type { StateFile } from './state.ts';
 import { syncProgress } from './sync.ts';
@@ -307,25 +307,29 @@ async function workClaimed(key: string, issue: JiraIssue, deps: WorkDeps, opts: 
 
     await importTicket({ jira, root, key, engine: deps.engine, state: deps.state });
 
+    const me = await jira.myself();
+    const isMe = (a: JiraUser) => (!!me.accountId && a.accountId === me.accountId) || (!!me.name && a.name === me.name);
+    // Questions @-mention the reporter (a real mention, so they are notified), unless the bot filed the story.
+    const ask = async (body: string, reason?: string): Promise<WorkResult> => {
+      const reporter = issue.fields.reporter as JiraUser | undefined;
+      await jira.addComment(key, `🤖 Before I build this I need a few answers. Reply here; the next run picks the story up again.\n\n${body}`, {
+        mention: reporter && !isMe(reporter) ? [reporter] : [],
+      });
+      await jira.editLabels(key, [LABELS.needsInfo], [LABELS.running]);
+      return { key, outcome: 'needs-info', branch: branchName, ...(reason ? { reason } : {}) };
+    };
+
     // No acceptance criteria and nobody has answered yet: ask, deterministically, before spending an agent run.
     // (Left to the agent, whether a vague story gets questions depends on the model's judgement that day.)
     if (cfg.requireAcceptanceCriteria !== false && !acceptanceCriteria(JiraClient.descriptionMarkdown(issue)).length) {
-      const me = await jira.myself();
-      const comments = ((issue.fields.comment?.comments ?? []) as { author: { name?: string; accountId?: string }; body: string }[]);
+      const comments = (issue.fields.comment?.comments ?? []) as { author: JiraUser; body: string }[];
       // Proceed only on answers to our question; an unrelated comment is not acceptance criteria.
-      const isMe = (a: { name?: string; accountId?: string }) => (me.accountId && a.accountId === me.accountId) || (!!me.name && a.name === me.name);
       const asked = comments.some((c) => isMe(c.author) && c.body.includes('need a few answers'));
       if (!asked || !answered(comments, me)) {
-        const reporter = issue.fields.reporter?.displayName ?? issue.fields.reporter?.name;
-        await jira.addComment(
-          key,
-          `🤖 Before I build this I need a few answers${reporter ? ` (${reporter})` : ''}. Reply here; the next run picks the story up again.
-
-` +
-            'This story has no acceptance criteria. Please add them to the description (a list under an "Acceptance criteria" heading) or reply with them: what should be true when it is done, and how would you check it?',
+        return await ask(
+          'This story has no acceptance criteria. Please add them to the description (a list under an "Acceptance criteria" heading) or reply with them: what should be true when it is done, and how would you check it?',
+          'no acceptance criteria',
         );
-        await jira.editLabels(key, [LABELS.needsInfo], [LABELS.running]);
-        return { key, outcome: 'needs-info', reason: 'no acceptance criteria', branch: branchName };
       }
     }
 
@@ -350,10 +354,7 @@ async function workClaimed(key: string, issue: JiraIssue, deps: WorkDeps, opts: 
     const outOfTime = () => fail(`the agent ran out of time (${cfg.timeoutMinutes ?? 45} min). Last output:\n\n\`\`\`\n${tail(output)}\n\`\`\``);
     const askedQuestions = async (): Promise<WorkResult | undefined> => {
       if (!existsSync(questions) || !readFileSync(questions, 'utf8').trim()) return undefined;
-      const reporter = issue.fields.reporter?.displayName ?? issue.fields.reporter?.name;
-      await jira.addComment(key, `🤖 Before I build this I need a few answers${reporter ? ` (${reporter})` : ''}. Reply here; the next run picks the story up again.\n\n${readFileSync(questions, 'utf8').trim()}`);
-      await jira.editLabels(key, [LABELS.needsInfo], [LABELS.running]);
-      return { key, outcome: 'needs-info', branch: branchName };
+      return ask(readFileSync(questions, 'utf8').trim());
     };
     const commitIfChanged = (paths: string[], message: string) => {
       const existing = paths.filter((p) => existsSync(join(root, p)));

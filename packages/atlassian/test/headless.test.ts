@@ -60,7 +60,11 @@ function fakeJira(issue: Partial<JiraIssue['fields']> = {}) {
     },
     assign: async () => {},
     moveTo: async (_k: string, s: string) => (statuses.push(s), { action: 'moved', status: s, hops: [s] }),
-    addComment: async (_k: string, body: string) => (comments.push({ author: { name: 'bot' }, body, created: new Date().toISOString() }), { id: '1' }),
+    // Mentions rendered exactly as the real client does (flavor dc: [~name]).
+    addComment: async (_k: string, body: string, opts: { mention?: { name?: string }[] } = {}) => (
+      comments.push({ author: { name: 'bot' }, body: [...(opts.mention ?? []).map((u) => jira.mentionMarkup(u)), body].filter(Boolean).join(' '), created: new Date().toISOString() }),
+      { id: '1' }
+    ),
     comments: async () => comments,
     epicOf: async () => undefined,
     addRemoteLink: async () => {},
@@ -318,5 +322,31 @@ describe('no acceptance criteria', () => {
     t.comments.push({ author: { name: 'alice' }, body: 'Criteria: UTF-8 BOM, dated file names', created: '' });
     expect((await workTicket('ABC-1', t.d)).outcome).toBe('pr');
     expect(agentCalls).toBe(3); // plan, execute, report
+  });
+});
+
+describe('questions @-mention the reporter', () => {
+  it('mentions the reporter with real mention markup', { timeout: 30_000 }, async () => {
+    const t = deps(agents.asks, { reporter: { name: 'alice', displayName: 'Alice (Product)' } });
+    await workTicket('ABC-1', t.d);
+    expect(t.comments.at(-1)!.body).toMatch(/^\[~alice\] 🤖 Before I build this I need a few answers/);
+  });
+
+  it('does not mention the bot when it filed the story itself', { timeout: 30_000 }, async () => {
+    const t = deps(agents.asks, { reporter: { name: 'bot', displayName: 'Bot' } });
+    await workTicket('ABC-1', t.d);
+    expect(t.comments.at(-1)!.body).toMatch(/^🤖 Before I build this/);
+  });
+
+  it('mention markup per flavor, and it survives the markdown conversion', async () => {
+    const dc = new JiraClient({ baseUrl: 'https://jira', flavor: 'dc', auth: { type: 'bearer', token: 't' } });
+    const cloud = new JiraClient({ baseUrl: 'https://x.atlassian.net', flavor: 'cloud', auth: { type: 'basic', user: 'u', token: 't' } });
+    expect(dc.mentionMarkup({ name: 'alice' })).toBe('[~alice]');
+    expect(cloud.mentionMarkup({ accountId: '5b10ac8d82e05b22cc7d4ef5' })).toBe('[~accountid:5b10ac8d82e05b22cc7d4ef5]');
+    expect(cloud.mentionMarkup({ name: 'alice' })).toBe(''); // Cloud needs the account id
+    let posted = '';
+    (dc as unknown as { http: unknown }).http = { post: async (_p: string, b: { body: string }) => ((posted = b.body), { id: '1' }) };
+    await dc.addComment('A-1', 'Which [reports]?', { mention: [{ name: 'alice' }] });
+    expect(posted).toBe('[~alice] Which \\[reports\\]?'); // the mention is raw; the text is escaped
   });
 });

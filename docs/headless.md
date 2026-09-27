@@ -19,8 +19,8 @@ Story labelled  ──poll───▶ sdlc-atl work --poll
 ```
 
 A story without acceptance criteria is asked for them before any agent runs (`work.requireAcceptanceCriteria`,
-default on): left to the model, whether a vague story gets questions varies from run to run. A human reply to the
-questions makes the story eligible again; the next run reads the whole conversation from the
+default on): left to the model, whether a vague story gets questions varies from run to run. Questions @-mention the story's reporter (a real mention, so they are notified;
+not when the bot filed the story). A human reply to the questions makes the story eligible again; the next run reads the whole conversation from the
 brief. Nothing is ever merged or pushed to the base branch: people review the draft PR.
 
 ## Labels

@@ -106,6 +106,22 @@ describe.skipIf(!bbBase || !bbToken || !cfg.jira)('headless work (live, Jira + B
     expect(await jira.getIssueProperty(key, CLAIM_PROPERTY)).toBeUndefined();
   });
 
+  it('questions @-mention the reporter: Jira renders a real user mention', async () => {
+    // A reporter other than the bot (whose own stories get no mention).
+    const reporter = 'sdlc-test-reporter';
+    await jira.http
+      .post('/rest/api/2/user', { name: reporter, password: `p-${run}-X9!`, emailAddress: `${reporter}@example.invalid`, displayName: 'SDLC Test Reporter', applicationKeys: ['jira-software'] })
+      .catch(() => undefined); // already exists
+    const key = await story('Unclear export (reported)');
+    await jira.updateIssue(key, { fields: { reporter: { name: reporter } } });
+    const r = await workTicket(key, deps(key, 'ask'));
+    expect(r.outcome).toBe('needs-info');
+    const all = await jira.http.get<{ comments: { body: string; renderedBody: string }[] }>(`/rest/api/2/issue/${key}/comment`, { expand: 'renderedBody' });
+    const q = all.comments.at(-1)!;
+    expect(q.body).toMatch(new RegExp(`^\\[~${reporter}\\] `));
+    expect(q.renderedBody).toMatch(new RegExp(`(data-username|name)=.?${reporter}`)); // a user link, not literal text
+  });
+
   it('the default poll query is valid JQL on this Jira', async () => {
     await expect(jira.search(defaultJql({ jira: { projects: [TEST_PROJECT] } }), { limit: 1 })).resolves.toBeDefined();
   });

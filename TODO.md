@@ -55,7 +55,7 @@ review, which has the evidence (file:line) and effort for each item. Work top to
 - [x] **D6** [SCRUM-182](https://kennyalanlong.atlassian.net/browse/SCRUM-182) Headless "work this ticket" for Data Center: label `ai-ready` → Jenkins polls → Copilot CLI works it → progress and questions in Jira → draft PR on Bitbucket DC ([docs/headless.md](docs/headless.md))
   - [x] **W1** [SCRUM-294](https://kennyalanlong.atlassian.net/browse/SCRUM-294) `sdlc-atl work KEY`: one headless run (runner-driven plan → execute → report)
   - [x] **W2** [SCRUM-296](https://kennyalanlong.atlassian.net/browse/SCRUM-296) Polling, eligibility, kill switch
-  - [x] **W3** [SCRUM-297](https://kennyalanlong.atlassian.net/browse/SCRUM-297) Clarification loop
+  - [x] **W3** [SCRUM-297](https://kennyalanlong.atlassian.net/browse/SCRUM-297) Clarification loop (questions @-mention the reporter)
   - [x] **W4** [SCRUM-295](https://kennyalanlong.atlassian.net/browse/SCRUM-295) Jenkins in the local stack
   - [x] **W6** [SCRUM-334](https://kennyalanlong.atlassian.net/browse/SCRUM-334) Claim check for overlapping jobs (issue-property claim, stale takeover)
   - [x] **W7** [SCRUM-335](https://kennyalanlong.atlassian.net/browse/SCRUM-335) In-repo Jenkinsfile (multibranch), `work --every` without Jenkins, acceptance-criteria guard

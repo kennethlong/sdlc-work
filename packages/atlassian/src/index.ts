@@ -1,6 +1,6 @@
 export { authHeader, detectFlavor, envLookup, loadConfig, parseEnv, type EnvOptions, type AtlassianConfig, type Auth, type Flavor, type ProductConfig } from './config.ts';
 export { AtlassianError, HttpClient } from './http.ts';
-export { JiraClient, type JiraIssue, type NewIssue } from './jira.ts';
+export { JiraClient, type JiraIssue, type JiraUser, type NewIssue } from './jira.ts';
 export { ConfluenceClient, type ConfluencePage } from './confluence.ts';
 export { ConfluenceCloudClient } from './confluence-cloud.ts';
 export { jiraWikiToMarkdown, markdownToJiraWiki, markdownToStorage, storageToMarkdown } from './markup.ts';

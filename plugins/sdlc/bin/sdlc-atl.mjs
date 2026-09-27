@@ -27236,9 +27236,16 @@ var JiraClient = class {
     await this.http.post(`/rest/api/2/issue/${encodeURIComponent(key)}/transitions`, { transition: { id: t.id } });
     return true;
   }
-  /** Add a comment; body is markdown. */
-  addComment(key, markdown) {
-    return this.http.post(`/rest/api/2/issue/${encodeURIComponent(key)}/comment`, { body: markdownToJiraWiki(markdown) });
+  /** Add a comment; body is markdown. `mention` users get a real @-mention (and so a notification) in front. */
+  addComment(key, markdown, opts = {}) {
+    const mentions = (opts.mention ?? []).map((u) => this.mentionMarkup(u)).filter(Boolean);
+    const body = [mentions.join(" "), markdownToJiraWiki(markdown)].filter(Boolean).join(" ");
+    return this.http.post(`/rest/api/2/issue/${encodeURIComponent(key)}/comment`, { body });
+  }
+  /** Wiki markup for an @-mention: `[~name]` on Data Center, `[~accountid:ID]` on Cloud ('' if the user can't be named). */
+  mentionMarkup(user) {
+    if (this.flavor === "cloud") return user.accountId ? `[~accountid:${user.accountId}]` : "";
+    return user.name ? `[~${user.name}]` : "";
   }
   comments(key) {
     return this.http.get(`/rest/api/2/issue/${encodeURIComponent(key)}/comment`).then((r) => r.comments);
@@ -28132,21 +28139,26 @@ async function workClaimed(key, issue, deps, opts) {
     git(root2, "checkout", "--quiet", "--force", "-B", branchName, remoteBranch ? `origin/${branchName}` : `origin/${base}`);
     const startSha = git(root2, "rev-parse", "HEAD").trim();
     await importTicket({ jira, root: root2, key, engine: deps.engine, state: deps.state });
+    const me3 = await jira.myself();
+    const isMe = (a) => !!me3.accountId && a.accountId === me3.accountId || !!me3.name && a.name === me3.name;
+    const ask = async (body, reason) => {
+      const reporter = issue.fields.reporter;
+      await jira.addComment(key, `\u{1F916} Before I build this I need a few answers. Reply here; the next run picks the story up again.
+
+${body}`, {
+        mention: reporter && !isMe(reporter) ? [reporter] : []
+      });
+      await jira.editLabels(key, [LABELS.needsInfo], [LABELS.running]);
+      return { key, outcome: "needs-info", branch: branchName, ...reason ? { reason } : {} };
+    };
     if (cfg2.requireAcceptanceCriteria !== false && !acceptanceCriteria(JiraClient.descriptionMarkdown(issue)).length) {
-      const me3 = await jira.myself();
       const comments = issue.fields.comment?.comments ?? [];
-      const isMe = (a) => me3.accountId && a.accountId === me3.accountId || !!me3.name && a.name === me3.name;
       const asked = comments.some((c) => isMe(c.author) && c.body.includes("need a few answers"));
       if (!asked || !answered(comments, me3)) {
-        const reporter = issue.fields.reporter?.displayName ?? issue.fields.reporter?.name;
-        await jira.addComment(
-          key,
-          `\u{1F916} Before I build this I need a few answers${reporter ? ` (${reporter})` : ""}. Reply here; the next run picks the story up again.
-
-This story has no acceptance criteria. Please add them to the description (a list under an "Acceptance criteria" heading) or reply with them: what should be true when it is done, and how would you check it?`
+        return await ask(
+          'This story has no acceptance criteria. Please add them to the description (a list under an "Acceptance criteria" heading) or reply with them: what should be true when it is done, and how would you check it?',
+          "no acceptance criteria"
         );
-        await jira.editLabels(key, [LABELS.needsInfo], [LABELS.running]);
-        return { key, outcome: "needs-info", reason: "no acceptance criteria", branch: branchName };
       }
     }
     const workDir = join6(root2, ".sdlc", "work");
@@ -28176,12 +28188,7 @@ ${tail(output)}
 \`\`\``);
     const askedQuestions = async () => {
       if (!existsSync6(questions) || !readFileSync8(questions, "utf8").trim()) return void 0;
-      const reporter = issue.fields.reporter?.displayName ?? issue.fields.reporter?.name;
-      await jira.addComment(key, `\u{1F916} Before I build this I need a few answers${reporter ? ` (${reporter})` : ""}. Reply here; the next run picks the story up again.
-
-${readFileSync8(questions, "utf8").trim()}`);
-      await jira.editLabels(key, [LABELS.needsInfo], [LABELS.running]);
-      return { key, outcome: "needs-info", branch: branchName };
+      return ask(readFileSync8(questions, "utf8").trim());
     };
     const commitIfChanged = (paths, message) => {
       const existing = paths.filter((p) => existsSync6(join6(root2, p)));
