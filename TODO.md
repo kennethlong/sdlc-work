@@ -58,6 +58,7 @@ review, which has the evidence (file:line) and effort for each item. Work top to
   - [x] **W3** [SCRUM-297](https://kennyalanlong.atlassian.net/browse/SCRUM-297) Clarification loop
   - [x] **W4** [SCRUM-295](https://kennyalanlong.atlassian.net/browse/SCRUM-295) Jenkins in the local stack
   - [x] **W6** [SCRUM-334](https://kennyalanlong.atlassian.net/browse/SCRUM-334) Claim check for overlapping jobs (issue-property claim, stale takeover)
+  - [x] **W7** [SCRUM-335](https://kennyalanlong.atlassian.net/browse/SCRUM-335) In-repo Jenkinsfile (multibranch), `work --every` without Jenkins, acceptance-criteria guard
   - [x] **W5** [SCRUM-298](https://kennyalanlong.atlassian.net/browse/SCRUM-298) End-to-end demo
 - [ ] **D7** [SCRUM-183](https://kennyalanlong.atlassian.net/browse/SCRUM-183) Tests from acceptance criteria (EARS / Given-When-Then → property and acceptance tests; acceptance criterion → test → verification table)
 - [ ] **D8** [SCRUM-184](https://kennyalanlong.atlassian.net/browse/SCRUM-184) Enforce the learning loop in CI (the RCA's regression test fails before the fix and passes after; solutions index)

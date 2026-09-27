@@ -37,4 +37,4 @@ export { currentBranch, defaultBase, keyFrom, pushState, reviewScope, type Revie
 export { BitbucketDcHost, GitHubHost, parseRemote, resolveHost, type Finding, type GitHost, type HostKind, type PullRequest, type RemoteInfo } from './hosts/index.ts';
 export { counts, isBlocking, readReview, renderJiraComment, renderPrComment, REVIEW_MARKER, type Review, type Verdict } from './review.ts';
 export { openPr, publishReview, type PrResult, type ReviewPublishResult } from './pr.ts';
-export { CLAIM_PROPERTY, LABELS, agentCommand, answered, claimIsStale, claimStory, defaultJql, ineligibility, pollAndWork, spawnAgent, workDisabled, workPrompt, workTicket, type AgentName, type AgentRunner, type WorkConfig, type WorkDeps, type WorkResult } from './headless.ts';
+export { CLAIM_PROPERTY, LABELS, agentCommand, answered, claimIsStale, claimStory, defaultJql, ineligibility, pollAndWork, watchAndWork, spawnAgent, workDisabled, workPrompt, workTicket, type AgentName, type AgentRunner, type WorkConfig, type WorkDeps, type WorkResult } from './headless.ts';

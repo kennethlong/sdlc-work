@@ -1,0 +1,80 @@
+// sdlc headless "work this ticket", IN-REPO variant: commit this file to the repo the AI should work in (e.g. as
+// `Jenkinsfile.sdlc-work`) and point a multibranch pipeline / organisation folder at that script path. Jenkins checks
+// the repo out; every few minutes, on the main branch only, `sdlc-atl work --poll` picks up Jira stories labelled
+// `ai-ready`, has an AI agent work them in this checkout, and opens draft PRs. The bot's feature branches are built
+// too (multibranch builds every branch) but do nothing.
+//
+// If the repo already has a `Jenkinsfile` for its build, keep that one and use a second script path for this file,
+// or copy the 'Work eligible stories' stage into it (keep its `when` and the cron guard).
+//
+// Agent needs: git, Node >= 22, uv, the AI CLI (default GitHub Copilot CLI: `npm i -g @github/copilot`), and the
+// sdlc skills + CLI for the Jenkins user: `node <sdlc-work>/setup.mjs --yes --agents copilot --skip-credentials
+// --skip-prereqs`. Environment (global properties or the agent's): JIRA_BASE_URL, CONFLUENCE_BASE_URL,
+// BITBUCKET_BASE_URL. Secrets: Jenkins "secret text" credentials, ids given below (empty: taken from the agent's
+// environment). The repo's `.sdlc/config.json` says which stories to take (`work.jql`, `jira.projects`), the agent
+// and the limits; see docs/headless.md.
+pipeline {
+  agent any
+  options {
+    disableConcurrentBuilds()
+    timestamps()
+    timeout(time: 120, unit: 'MINUTES')
+  }
+  // Only the work branch polls; every other branch gets no timer.
+  triggers { cron(env.BRANCH_NAME == (env.SDLC_WORK_BRANCH ?: 'main') ? 'H/5 * * * *' : '') }
+  parameters {
+    choice(name: 'AGENT', choices: ['(from config)', 'copilot', 'claude', 'codex'], description: 'AI coding agent; (from config) = .sdlc/config.json work.agent, else copilot')
+    string(name: 'SDLC_ATL', defaultValue: '', description: 'Path to sdlc-atl.mjs (default: env SDLC_ATL, else ~/.sdlc/bin/sdlc-atl.mjs)')
+    string(name: 'JIRA_PAT_CREDENTIALS', defaultValue: '', description: 'Credential id: Jira token (empty: env JIRA_PAT)')
+    string(name: 'CONFLUENCE_PAT_CREDENTIALS', defaultValue: '', description: 'Credential id: Confluence token (empty: env CONFLUENCE_PAT)')
+    string(name: 'BITBUCKET_TOKEN_CREDENTIALS', defaultValue: '', description: 'Credential id: Bitbucket HTTP access token, also used to push (empty: env BITBUCKET_TOKEN)')
+    string(name: 'COPILOT_TOKEN_CREDENTIALS', defaultValue: '', description: 'Credential id: GitHub token with Copilot access (empty: env COPILOT_GITHUB_TOKEN)')
+  }
+  stages {
+    stage('Work eligible stories') {
+      when { expression { env.BRANCH_NAME == (env.SDLC_WORK_BRANCH ?: 'main') } }
+      steps {
+        script {
+          def secrets = [
+            ['JIRA_PAT_CREDENTIALS', 'JIRA_PAT'],
+            ['CONFLUENCE_PAT_CREDENTIALS', 'CONFLUENCE_PAT'],
+            ['BITBUCKET_TOKEN_CREDENTIALS', 'BITBUCKET_TOKEN'],
+            ['COPILOT_TOKEN_CREDENTIALS', 'COPILOT_GITHUB_TOKEN'],
+          ]
+          def bindings = []
+          for (int i = 0; i < secrets.size(); i++) {
+            def id = params[secrets[i][0]]
+            if (id) bindings << string(credentialsId: id, variable: secrets[i][1])
+          }
+          withCredentials(bindings) {
+            def agent = (params.AGENT && !params.AGENT.startsWith('(')) ? params.AGENT : ''
+            withEnv(["AGENT_NAME=${agent}", "ATL=${params.SDLC_ATL ?: ''}"]) {
+              // The shebang stops Jenkins' default `sh -x` tracing, which would print tokens from the environment.
+              sh '''#!/bin/bash
+                set -eu
+                ATL="${ATL:-${SDLC_ATL:-$HOME/.sdlc/bin/sdlc-atl.mjs}}"
+                echo "sdlc-atl: $ATL"
+                # This workspace is reused between builds: start from a clean checkout (runner logs in .sdlc/ stay).
+                git reset --quiet --hard
+                git clean -fdq -e .sdlc/
+                # The runner pushes with plain git: authenticate HTTP remotes with the Bitbucket token. (SSH remotes
+                # use the agent's key instead.)
+                case "$(git remote get-url origin)" in
+                  http*) git config http.extraHeader "Authorization: Bearer ${BITBUCKET_TOKEN:?BITBUCKET_TOKEN is not set}" ;;
+                esac
+                git config user.name "${SDLC_BOT_NAME:-sdlc bot}"
+                git config user.email "${SDLC_BOT_EMAIL:-sdlc-bot@example.invalid}"
+                node "$ATL" work --poll ${AGENT_NAME:+--agent "$AGENT_NAME"}
+              '''
+            }
+          }
+        }
+      }
+    }
+  }
+  post {
+    always {
+      archiveArtifacts artifacts: '.sdlc/work/**', allowEmptyArchive: true
+    }
+  }
+}

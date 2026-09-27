@@ -18,11 +18,11 @@ import { slugify } from './engines/piv.ts';
 import type { SdlcConfig } from './engines/index.ts';
 import { defaultBase, git } from './git.ts';
 import type { GitHost } from './hosts/types.ts';
-import type { JiraClient, JiraIssue } from './jira.ts';
+import { JiraClient, type JiraIssue } from './jira.ts';
 import { openPr, publishReview } from './pr.ts';
 import type { StateFile } from './state.ts';
 import { syncProgress } from './sync.ts';
-import { importTicket } from './tickets.ts';
+import { acceptanceCriteria, importTicket } from './tickets.ts';
 import type { Engine } from './work.ts';
 
 export const LABELS = { ready: 'ai-ready', running: 'ai-running', needsInfo: 'ai-needs-info', failed: 'ai-failed', done: 'ai-done', skipped: 'ai-skipped' } as const;
@@ -46,6 +46,8 @@ export type WorkConfig = {
   maxPerRun?: number;
   /** How long a claim settles before it is re-read (two runners racing for one story: the last write wins). */
   claimSettleSeconds?: number;
+  /** Ask for acceptance criteria before any agent run when the story has none (default true). */
+  requireAcceptanceCriteria?: boolean;
 };
 
 /** busy: another runner holds the story (it is left alone). */
@@ -305,6 +307,28 @@ async function workClaimed(key: string, issue: JiraIssue, deps: WorkDeps, opts: 
 
     await importTicket({ jira, root, key, engine: deps.engine, state: deps.state });
 
+    // No acceptance criteria and nobody has answered yet: ask, deterministically, before spending an agent run.
+    // (Left to the agent, whether a vague story gets questions depends on the model's judgement that day.)
+    if (cfg.requireAcceptanceCriteria !== false && !acceptanceCriteria(JiraClient.descriptionMarkdown(issue)).length) {
+      const me = await jira.myself();
+      const comments = ((issue.fields.comment?.comments ?? []) as { author: { name?: string; accountId?: string }; body: string }[]);
+      // Proceed only on answers to our question; an unrelated comment is not acceptance criteria.
+      const isMe = (a: { name?: string; accountId?: string }) => (me.accountId && a.accountId === me.accountId) || (!!me.name && a.name === me.name);
+      const asked = comments.some((c) => isMe(c.author) && c.body.includes('need a few answers'));
+      if (!asked || !answered(comments, me)) {
+        const reporter = issue.fields.reporter?.displayName ?? issue.fields.reporter?.name;
+        await jira.addComment(
+          key,
+          `🤖 Before I build this I need a few answers${reporter ? ` (${reporter})` : ''}. Reply here; the next run picks the story up again.
+
+` +
+            'This story has no acceptance criteria. Please add them to the description (a list under an "Acceptance criteria" heading) or reply with them: what should be true when it is done, and how would you check it?',
+        );
+        await jira.editLabels(key, [LABELS.needsInfo], [LABELS.running]);
+        return { key, outcome: 'needs-info', reason: 'no acceptance criteria', branch: branchName };
+      }
+    }
+
     const workDir = join(root, '.sdlc', 'work');
     mkdirSync(workDir, { recursive: true });
     const questions = join(workDir, `${key}-questions.md`);
@@ -443,3 +467,34 @@ export async function pollAndWork(deps: WorkDeps): Promise<WorkResult[]> {
 }
 
 export const isOurLabel = (l: string) => OURS.includes(l);
+
+/**
+ * Keep polling without a CI server: a terminal, a Windows scheduled task, a service. `makeDeps` is called every round,
+ * so config changes and the kill switch apply without a restart. Stops when `signal` aborts (after the current story).
+ */
+export async function watchAndWork(
+  makeDeps: () => WorkDeps,
+  everyMinutes: number,
+  opts: { signal?: AbortSignal; onResults?: (r: WorkResult[]) => void; onError?: (e: Error) => void; maxRounds?: number; sleep?: (ms: number, signal?: AbortSignal) => Promise<void> } = {},
+): Promise<number> {
+  const sleep =
+    opts.sleep ??
+    ((ms: number, signal?: AbortSignal) =>
+      new Promise<void>((resolve) => {
+        const t = setTimeout(resolve, ms);
+        signal?.addEventListener('abort', () => (clearTimeout(t), resolve()), { once: true });
+      }));
+  let rounds = 0;
+  while (!opts.signal?.aborted) {
+    rounds++;
+    try {
+      const results = await pollAndWork(makeDeps()); // not inside `onResults?.(...)`: that would skip the poll
+      opts.onResults?.(results);
+    } catch (e) {
+      opts.onError?.(e as Error); // e.g. Jira unreachable for a moment: try again next round
+    }
+    if (opts.maxRounds !== undefined && rounds >= opts.maxRounds) break;
+    if (!opts.signal?.aborted) await sleep(everyMinutes * 60_000, opts.signal);
+  }
+  return rounds;
+}

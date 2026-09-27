@@ -42,3 +42,31 @@ jobs:
           }
         }
       }
+  # The in-repo variant: a multibranch pipeline that reads Jenkinsfile.sdlc-work from the sandbox repo itself
+  # (templates/ci/jenkins/Jenkinsfile.sdlc-work-inrepo, committed there by scripts/demo-headless.ts --in-repo).
+  # Only the main branch polls Jira; the bot's feature branches build as no-ops.
+  - script: >
+      multibranchPipelineJob('sdlc-work-inrepo') {
+        description('In-repo variant of the headless runner: Jenkinsfile.sdlc-work in SDLC/sandbox, main branch only.')
+        branchSources {
+          git {
+            id('sdlc-sandbox')
+            remote('http://bitbucket.localhost:7990/scm/sdlc/sandbox.git')
+            credentialsId('bitbucket-http')
+          }
+        }
+        factory { workflowBranchProjectFactory { scriptPath('Jenkinsfile.sdlc-work') } }
+        triggers { periodicFolderTrigger { interval('5m') } }
+        orphanedItemStrategy { discardOldItems { numToKeep(20) } }
+      }
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          # Clone credential for multibranch indexing (dev only; the stack's Bitbucket HTTP access token).
+          - usernamePassword:
+              scope: GLOBAL
+              id: bitbucket-http
+              username: admin
+              password: "${BITBUCKET_TOKEN}"

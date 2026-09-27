@@ -341,6 +341,15 @@ real repo, then build the differentiators. Source: the crew review (docs/researc
 - **Files touched (estimate):** `packages/atlassian/src/headless.ts`, `packages/atlassian/src/jira.ts`
 - **Depends on:** W-2
 
+### W-7 — In-repo Jenkinsfile, running without Jenkins, acceptance-criteria guard
+- **Scope:** Fit build systems that pick up a Jenkinsfile from the repo; pilot without CI; vague stories always ask
+- **Acceptance criteria:**
+  - `Jenkinsfile.sdlc-work-inrepo`: works in Jenkins' checkout, only the main branch polls, feature branches are no-ops; verified on a multibranch job
+  - `sdlc-atl work --poll --every N` keeps polling from a terminal, rereads config each round, survives a failing round, stops after the current story on Ctrl-C
+  - A story without acceptance criteria is asked for them before any agent run, until someone answers the bot's question
+- **Files touched (estimate):** `templates/ci/jenkins/*`, `packages/atlassian/src/headless.ts`, `packages/atlassian/src/cli.ts`
+- **Depends on:** W-6
+
 ### W-5 — End-to-end demo
 - **Scope:** Label a story, get a draft PR
 - **Acceptance criteria:**

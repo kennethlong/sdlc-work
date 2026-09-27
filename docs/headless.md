@@ -18,7 +18,9 @@ Story labelled  ──poll───▶ sdlc-atl work --poll
    ◀── "Ready for review" ── 6. story to the review status (never Done), label ai-done
 ```
 
-A human reply to the questions makes the story eligible again; the next run reads the whole conversation from the
+A story without acceptance criteria is asked for them before any agent runs (`work.requireAcceptanceCriteria`,
+default on): left to the model, whether a vague story gets questions varies from run to run. A human reply to the
+questions makes the story eligible again; the next run reads the whole conversation from the
 brief. Nothing is ever merged or pushed to the base branch: people review the draft PR.
 
 ## Labels
@@ -63,6 +65,30 @@ brief. Nothing is ever merged or pushed to the base branch: people review the dr
   `CONFLUENCE_BASE_URL`, `CONFLUENCE_PAT`, `BITBUCKET_BASE_URL`, `BITBUCKET_TOKEN`, and the agent's credential
   (Copilot CLI: `COPILOT_GITHUB_TOKEN`, a bot account's token with Copilot access).
 - The clone must be able to push: `git config http.extraHeader "Authorization: Bearer $BITBUCKET_TOKEN"`.
+
+## Jenkins: a job, or a Jenkinsfile in the repo
+
+- **In the repo (multibranch / organisation folders):** commit `templates/ci/jenkins/Jenkinsfile.sdlc-work-inrepo`
+  as `Jenkinsfile.sdlc-work` (or merge its stage into the repo's `Jenkinsfile`) and point the build system at that
+  script path. Jenkins checks the repo out; only the main branch gets the 5-minute timer and runs the stage
+  (`SDLC_WORK_BRANCH` to change it); the bot's `feature/*` branches build as no-ops. The workspace is reset before
+  each run.
+- **A standalone job:** `templates/ci/jenkins/Jenkinsfile.sdlc-work` clones `REPO_URL` itself each time.
+
+Both take the same credential ids (secret text) and read the base URLs from the environment.
+
+## Without Jenkins
+
+`sdlc-atl work` is an ordinary command; Jenkins is only a scheduler. For a pilot, a dedicated clone of the repo on
+any machine with the AI CLI and the tokens will do:
+
+```powershell
+git clone <repo> C:\sdlc-runner\shop; cd C:\sdlc-runner\shop    # its own clone: the runner switches branches
+sdlc-atl work --poll --every 5          # keep polling; Ctrl-C stops after the current story
+```
+
+`--every` rereads `.sdlc/config.json` each round (so `work.enabled: false` stops it) and carries on when Jira is
+briefly unreachable. A scheduled task running `sdlc-atl work --poll` every few minutes works too.
 
 ## Several jobs, one Jira
 

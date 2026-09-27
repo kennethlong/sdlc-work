@@ -1,8 +1,9 @@
 // W-5 demo on the local stack: label stories ai-ready, let Jenkins' poll job have the real AI agent (Copilot CLI by
 // default) work them, then show the outcome. Needs `./dc.ps1 up` (with Jenkins) and `node scripts/seed-showcase.ts`.
-// Usage: node scripts/demo-headless.ts [--no-trigger]
+// Usage: node scripts/demo-headless.ts [--no-trigger] [--in-repo]
+//   --in-repo  also commit the in-repo Jenkinsfile (Jenkinsfile.sdlc-work) for the multibranch job sdlc-work-inrepo
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,7 +26,9 @@ writeFileSync(
 writeFileSync(join(clone, '.gitignore'), '.sdlc/tickets/\n.sdlc/work/\n.sdlc/sync.log\n.sdlc/audit.jsonl*\n.sdlc/context/\n');
 git('config', 'user.name', 'sdlc demo');
 git('config', 'user.email', 'demo@example.invalid');
-git('add', '.sdlc/config.json', '.gitignore');
+const inRepo = process.argv.includes('--in-repo');
+if (inRepo) copyFileSync(join(repo, 'templates', 'ci', 'jenkins', 'Jenkinsfile.sdlc-work-inrepo'), join(clone, 'Jenkinsfile.sdlc-work'));
+git('add', '.sdlc/config.json', '.gitignore', ...(inRepo ? ['Jenkinsfile.sdlc-work'] : []));
 try {
   git('commit', '-qm', 'chore: sdlc config for unattended work');
   git('push', '-q', 'origin', 'HEAD:main');

@@ -28,7 +28,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { hookInstalled, installHook, selfCommand, uninstallHook, withLock } from './automation.ts';
 import { ensureRulesFiles } from './rules.ts';
-import { pollAndWork, workTicket, type AgentName, type WorkConfig, type WorkDeps } from './headless.ts';
+import { pollAndWork, watchAndWork, workTicket, type AgentName, type WorkConfig, type WorkDeps, type WorkResult } from './headless.ts';
 import { ConfluenceClient } from './confluence.ts';
 import { connect } from './index.ts';
 import { resolveEngine, readSdlcConfig } from './engines/index.ts';
@@ -63,7 +63,8 @@ Both
   whoami                                       check the Jira and Confluence connection
 Headless (CI)
   work KEY [--agent copilot|claude|codex] [--force]   an AI agent works the story unattended -> draft PR
-  work --poll                                  work the next story labelled ai-ready (config: work.*)
+  work --poll [--every MINUTES]                work stories labelled ai-ready (config: work.*); --every keeps
+                                               polling without a CI server (a terminal or a scheduled task)
 
 Common options: --root DIR, --engine gsd|piv, --dry-run, --json, --env FILE, --space KEY
 Credentials: ~/.sdlc/atlassian.env (set up with \`node setup.mjs\` in the sdlc-work clone).`;
@@ -94,6 +95,7 @@ const { values: opt, positionals } = parseArgs({
     key: { type: 'string' },
     branch: { type: 'string' },
     poll: { type: 'boolean', default: false },
+    every: { type: 'string' },
     force: { type: 'boolean', default: false },
     agent: { type: 'string' },
     pr: { type: 'string' },
@@ -127,20 +129,45 @@ try {
       } catch {
         confluence = undefined;
       }
-      const config = { ...cfg, work: { ...(cfg as { work?: WorkConfig }).work, ...(opt.agent ? { agent: opt.agent as AgentName } : {}) } };
-      const deps: WorkDeps = {
-        jira: c.jira,
-        confluence,
-        host: resolveHost(root, { envFile: opt.env }),
-        engine: resolveEngine(root, opt.engine, { fallback: true }),
-        state: new StateFile(root),
-        root,
-        config,
-        buildUrl: process.env.BUILD_URL,
-        log: (l) => console.error(`${new Date().toISOString()} ${l}`),
+      // Built per round in --every mode, so edits to .sdlc/config.json (and the kill switch) apply without a restart.
+      const makeDeps = (): WorkDeps => {
+        const current = readSdlcConfig(root) as typeof cfg & { work?: WorkConfig };
+        return {
+          jira: c.jira,
+          confluence,
+          host: resolveHost(root, { envFile: opt.env }),
+          engine: resolveEngine(root, opt.engine, { fallback: true }),
+          state: new StateFile(root),
+          root,
+          config: { ...current, work: { ...current.work, ...(opt.agent ? { agent: opt.agent as AgentName } : {}) } },
+          buildUrl: process.env.BUILD_URL,
+          log: (l) => console.error(`${new Date().toISOString()} ${l}`),
+        };
       };
+      const show = (results: WorkResult[]) =>
+        results.length ? results.map((r) => `${r.key}: ${r.outcome}${r.prUrl ? ` ${r.prUrl}` : ''}${r.reason ? ` (${r.reason})` : ''}`).join('\n') : 'nothing to work on';
+      if (opt.every) {
+        // No CI server: keep polling from this terminal (or a scheduled task). Ctrl-C stops after the current story.
+        const minutes = Number(opt.every);
+        if (!(minutes > 0)) throw new Error('--every takes a number of minutes, e.g. --every 5');
+        const stop = new AbortController();
+        process.on('SIGINT', () => {
+          if (stop.signal.aborted) process.exit(130);
+          stop.abort();
+          console.error('stopping after the current story (Ctrl-C again to quit now)');
+        });
+        console.error(`polling every ${minutes} min in ${root}; Ctrl-C to stop`);
+        const stamp = () => new Date().toISOString();
+        await watchAndWork(makeDeps, minutes, {
+          signal: stop.signal,
+          onResults: (r) => console.log(show(r).split('\n').map((l) => `${stamp()} ${l}`).join('\n')),
+          onError: (e) => console.error(`${stamp()} poll failed (retrying next round): ${e.message}`),
+        });
+        break;
+      }
+      const deps = makeDeps();
       const results = opt.poll ? await pollAndWork(deps) : [await workTicket(keyArg(), deps, { force: opt.force })];
-      out(results, () => (results.length ? results.map((r) => `${r.key}: ${r.outcome}${r.prUrl ? ` ${r.prUrl}` : ''}${r.reason ? ` (${r.reason})` : ''}`).join('\n') : 'nothing to work on'));
+      out(results, () => show(results));
       if (results.some((r) => r.outcome === 'failed')) process.exitCode = 1;
       break;
     }

@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PivEngine } from '../src/engines/piv.ts';
-import { agentCommand, answered, CLAIM_PROPERTY, claimIsStale, defaultJql, ineligibility, LABELS, pollAndWork, workDisabled, pivPaths, workPrompt, workTicket, type AgentRunner, type WorkDeps } from '../src/headless.ts';
+import { agentCommand, answered, CLAIM_PROPERTY, claimIsStale, defaultJql, ineligibility, LABELS, pollAndWork, watchAndWork, workDisabled, pivPaths, workPrompt, workTicket, type AgentRunner, type WorkDeps } from '../src/headless.ts';
 import type { GitHost, PullRequest } from '../src/hosts/types.ts';
 import { JiraClient, type JiraIssue } from '../src/jira.ts';
 import { StateFile } from '../src/state.ts';
@@ -271,5 +271,52 @@ describe('claiming a story (two jobs with overlapping queries)', () => {
 
   it('the poll query also finds stories whose runner died', () => {
     expect(defaultJql({})).toContain('(labels = ai-running AND updated <= "-60m")');
+  });
+});
+
+describe('watchAndWork (no CI server)', () => {
+  it('polls every round, survives a failing round, and stops when aborted', { timeout: 30_000 }, async () => {
+    const t = deps(agents.passes);
+    const slept: number[] = [];
+    const errors: string[] = [];
+    let calls = 0;
+    const stop = new AbortController();
+    const rounds = await watchAndWork(
+      () => {
+        calls++;
+        if (calls === 2) throw new Error('Jira unreachable');
+        if (calls === 3) stop.abort(); // e.g. Ctrl-C during the third round: that round still finishes
+        return t.d;
+      },
+      5,
+      { signal: stop.signal, sleep: async (ms) => void slept.push(ms), onError: (e) => errors.push(e.message) },
+    );
+    expect(rounds).toBe(3);
+    expect(errors).toEqual(['Jira unreachable']);
+    expect(slept).toEqual([300_000, 300_000]); // no sleep after the stop
+    expect(t.created).toHaveLength(1); // round 1 worked the story; round 3 found it done
+  });
+});
+
+describe('no acceptance criteria', () => {
+  const noAc = { description: 'Customers complain about the exports. Improve them.' };
+  it('asks for criteria without spending an agent run', { timeout: 30_000 }, async () => {
+    let agentCalls = 0;
+    const t = deps(async (o) => (agentCalls++, agents.passes(o)), noAc);
+    const r = await workTicket('ABC-1', t.d);
+    expect(r).toMatchObject({ outcome: 'needs-info', reason: 'no acceptance criteria' });
+    expect(agentCalls).toBe(0);
+    expect(t.comments.at(-1)!.body).toMatch(/no acceptance criteria/);
+    expect([...t.labels]).toEqual([LABELS.needsInfo]);
+  });
+
+  it('an unrelated comment is not an answer; a reply to the question is', { timeout: 60_000 }, async () => {
+    let agentCalls = 0;
+    const t = deps(async (o) => (agentCalls++, agents.passes(o)), noAc);
+    t.comments.push({ author: { name: 'alice' }, body: 'Looking into this next sprint', created: '' });
+    expect((await workTicket('ABC-1', t.d)).outcome).toBe('needs-info'); // the bot hadn't asked yet
+    t.comments.push({ author: { name: 'alice' }, body: 'Criteria: UTF-8 BOM, dated file names', created: '' });
+    expect((await workTicket('ABC-1', t.d)).outcome).toBe('pr');
+    expect(agentCalls).toBe(3); // plan, execute, report
   });
 });

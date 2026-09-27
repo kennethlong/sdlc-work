@@ -64,6 +64,9 @@ configured as code (`jenkins/casc/jenkins.yaml`), with no setup wizard. Log in w
   parameters); it is read when Jenkins starts, so restart Jenkins after editing it (`docker compose -p
   sdlc-atlassian restart jenkins`). The same goes for `npm run bundle`: the job runs the CLI the container
   installed at start (`~/.sdlc/bin`, printed as `sdlc-atl: …` in the build log).
+- **Job `sdlc-work-inrepo`** is the in-repo variant: a multibranch pipeline over the sandbox repo reading
+  `Jenkinsfile.sdlc-work` from it (`node scripts/demo-headless.ts --in-repo` commits it). Only `main` polls;
+  feature branches build as no-ops.
 - Demo: `node scripts/demo-headless.ts` commits a `.sdlc/config.json` to the sandbox repo, creates a clear and a
   vague `ai-ready` story, triggers the job and prints what happened (run `node scripts/seed-showcase.ts` first).
 - **The sdlc-work repo is mounted read-only** at `/opt/sdlc-work`: at start the container installs its CLI (to
