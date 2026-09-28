@@ -1,0 +1,3 @@
+- [sdlc-work goal](project-sdlc-work-goal.md) — full AI SDLC toolset from ai-native-starter-pack; TS + PS/Python prefs
+- [Automate, don't instruct](feedback-automate-not-instruct.md) — one-command setups over manual checklists; dev-only secrets are fine to paste
+- [Reference first](feedback-reference-first.md) — check ai-native-starter-pack flow before each feature; document why when deviating

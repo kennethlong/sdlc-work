@@ -26,6 +26,8 @@ Bitbucket Data Center, asking in Jira when the story is unclear. See [docs/headl
 ## Docs
 
 - [TODO](TODO.md): the ranked work list from the crew review
+- [AI notes and handoff](docs/ai-notes/README.md): where things stand, setting up the work machine, Claude Code memory
+- [Getting started](docs/getting-started.md) · [Headless work](docs/headless.md) · [Design](docs/design/01-atlassian-bridge.md)
 
 - [01 – Starter pack assessment](docs/research/01-starter-pack-assessment.md): what the pack covers, defects, what to keep
 - [02 – Landscape](docs/research/02-landscape.md): Spec Kit, BMAD, GSD, OpenSpec, Kiro, superpowers, and more; building blocks; gaps
